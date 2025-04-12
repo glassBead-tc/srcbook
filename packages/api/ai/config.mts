@@ -70,5 +70,8 @@ export async function getModel(): Promise<LanguageModel> {
         baseURL: aiBaseUrl,
       });
       return openaiCompatible(model);
+      
+    default:
+      throw new Error(`Unsupported AI provider: ${aiProvider}`);
   }
 }

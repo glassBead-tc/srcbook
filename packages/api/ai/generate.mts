@@ -138,7 +138,8 @@ ${query}
   return prompt;
 };
 
-type NoToolsGenerateTextResult = GenerateTextResult<{}>;
+// this might throw a compiler error, but that's fine: it's correct in Vercel AI SDK v4.x
+type NoToolsGenerateTextResult = GenerateTextResult<{}, {}>;
 /*
  * Given a user request, which is free form text describing their intent,
  * generate a srcbook using an LLM.
@@ -281,6 +282,7 @@ export async function streamEditApp(
       }
     },
     onFinish: () => {
+      // eslint-disable-next-line turbo/no-undeclared-env-vars
       if (process.env.SRCBOOK_DISABLE_ANALYTICS !== 'true') {
         logAppGeneration({
           appId,
