@@ -1,4 +1,4 @@
-import { streamText, generateText, type GenerateTextResult } from 'ai';
+import { streamText, generateText, type GenerateTextResult, type Tool } from 'ai';
 import { getModel } from './config.mjs';
 import {
   type CodeLanguageType,
@@ -7,6 +7,9 @@ import {
   randomid,
   type CellWithPlaceholderType,
 } from '@srcbook/shared';
+import { McpServerManager, DefaultApplicationProvider } from '../mcp/index.mjs';
+import { type McpTool, type McpServer } from '../mcp/types.mjs';
+import { z } from 'zod';
 import { type SessionType } from '../types.mjs';
 import { readFileSync } from 'node:fs';
 import Path from 'node:path';
@@ -140,6 +143,63 @@ ${query}
 
 // this might throw a compiler error, but that's fine: it's correct in Vercel AI SDK v4.x
 type NoToolsGenerateTextResult = GenerateTextResult<{}, {}>;
+
+/**
+ * Convert MCP tools to Vercel AI SDK tool format
+ * @param mcpTools Array of MCP tools
+ * @returns Record of Vercel AI SDK tools
+ */
+function formatMcpToolsForVercelAI(mcpTools: McpTool[]): Record<string, Tool> {
+  const toolsMap: Record<string, Tool> = {};
+  
+  mcpTools.forEach(tool => {
+    const toolName = `${tool.server}.${tool.id}`;
+    toolsMap[toolName] = {
+      parameters: z.object(tool.inputSchema.properties || {}),
+      description: tool.description,
+      // We don't implement execute here as we'll handle tool execution separately
+    };
+  });
+  
+  return toolsMap;
+}
+
+/**
+ * Get available MCP tools from all connected servers
+ * @returns Promise that resolves to a record of formatted tools for Vercel AI SDK
+ */
+async function getMcpTools(): Promise<Record<string, Tool>> {
+  try {
+    // Create a default application provider for MCP
+    const provider = new DefaultApplicationProvider('Srcbook', '1.0.0', process.cwd());
+    
+    // Get the MCP server manager instance
+    const serverManager = await McpServerManager.getInstance(provider);
+    
+    // Get all connected servers
+    const servers = await McpServerManager.getConnectedServers();
+    
+    // If no servers are connected, return an empty object
+    if (!servers || servers.length === 0) {
+      return {};
+    }
+    
+    // Collect tools from all servers
+    const toolsPromises = servers.map((server: McpServer) =>
+      McpServerManager.getServerCapabilities(server.name)
+        .then((capabilities: { tools: McpTool[] }) => capabilities.tools)
+    );
+    
+    const toolsArrays = await Promise.all(toolsPromises);
+    const allTools = toolsArrays.flat();
+    
+    // Format the tools for Vercel AI SDK
+    return formatMcpToolsForVercelAI(allTools);
+  } catch (error) {
+    console.error('Failed to get MCP tools:', error);
+    return {};
+  }
+}
 /*
  * Given a user request, which is free form text describing their intent,
  * generate a srcbook using an LLM.
@@ -149,12 +209,23 @@ type NoToolsGenerateTextResult = GenerateTextResult<{}, {}>;
  * In the future, we can parameterize this with different models, to allow
  * users to use different providers like Anthropic or local ones.
  */
+/**
+ * Generate a srcbook based on a user query
+ * @param query The user's query describing their intent
+ * @returns The generated text result
+ */
 export async function generateSrcbook(query: string): Promise<NoToolsGenerateTextResult> {
   const model = await getModel();
+  
+  // Get available MCP tools
+  const tools = await getMcpTools();
+  
+  // Generate text with or without tools based on availability
   const result = await generateText({
     model,
     system: makeGenerateSrcbookSystemPrompt(),
     prompt: query,
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
 
   // TODO, handle 'length' finish reason with sequencing logic.
@@ -164,12 +235,21 @@ export async function generateSrcbook(query: string): Promise<NoToolsGenerateTex
   return result;
 }
 
+/**
+ * Perform a health check on the AI model
+ * @returns A string indicating the model's status
+ */
 export async function healthcheck(): Promise<string> {
   const model = await getModel();
+  
+  // Get available MCP tools
+  const tools = await getMcpTools();
+  
   const result = await generateText({
     model,
     system: 'This is a test, simply respond "yes" to confirm the model is working.',
     prompt: 'Are you working?',
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
   return result.text;
 }
@@ -186,12 +266,16 @@ export async function generateCells(
 ): Promise<GenerateCellsResult> {
   const model = await getModel();
 
+  // Get available MCP tools
+  const tools = await getMcpTools();
+
   const systemPrompt = makeGenerateCellSystemPrompt(session.language);
   const userPrompt = makeGenerateCellUserPrompt(session, insertIdx, query);
   const result = await generateText({
     model,
     system: systemPrompt,
     prompt: userPrompt,
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
 
   // TODO, handle 'length' finish reason with sequencing logic.
@@ -214,12 +298,16 @@ export async function generateCells(
 export async function generateCellEdit(query: string, session: SessionType, cell: CodeCellType) {
   const model = await getModel();
 
+  // Get available MCP tools
+  const tools = await getMcpTools();
+
   const systemPrompt = makeGenerateCellEditSystemPrompt(session.language);
   const userPrompt = makeGenerateCellEditUserPrompt(query, session, cell);
   const result = await generateText({
     model,
     system: systemPrompt,
     prompt: userPrompt,
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
 
   return result.text;
@@ -232,6 +320,9 @@ export async function fixDiagnostics(
 ): Promise<string> {
   const model = await getModel();
 
+  // Get available MCP tools
+  const tools = await getMcpTools();
+
   const systemPrompt = makeFixDiagnosticsSystemPrompt();
   const userPrompt = makeFixDiagnosticsUserPrompt(session, cell, diagnostics);
 
@@ -239,6 +330,7 @@ export async function fixDiagnostics(
     model,
     system: systemPrompt,
     prompt: userPrompt,
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
 
   return result.text;
@@ -250,10 +342,15 @@ export async function generateApp(
   query: string,
 ): Promise<string> {
   const model = await getModel();
+  
+  // Get available MCP tools
+  const tools = await getMcpTools();
+  
   const result = await generateText({
     model,
     system: makeAppBuilderSystemPrompt(),
     prompt: makeAppCreateUserPrompt(projectId, files, query),
+    ...(Object.keys(tools).length > 0 ? { tools } : {})
   });
   return result.text;
 }
@@ -267,6 +364,9 @@ export async function streamEditApp(
 ) {
   const model = await getModel();
 
+  // Get available MCP tools
+  const tools = await getMcpTools();
+
   const systemPrompt = makeAppEditorSystemPrompt();
   const userPrompt = makeAppEditorUserPrompt(projectId, files, query);
 
@@ -276,6 +376,7 @@ export async function streamEditApp(
     model,
     system: systemPrompt,
     prompt: userPrompt,
+    ...(Object.keys(tools).length > 0 ? { tools } : {}),
     onChunk: (chunk) => {
       if (chunk.chunk.type === 'text-delta') {
         response += chunk.chunk.textDelta;
