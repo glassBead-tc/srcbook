@@ -6,11 +6,9 @@ import { StreamingXMLParser, TagType } from './stream-xml-parser.mjs';
 import {
   ActionChunkType,
   DescriptionChunkType,
-  FileActionChunkType,
-  CommandActionChunkType,
   McpToolActionChunkType
 } from '../../shared/src/types/history.mjs';
-import { McpServerManager, McpHub } from '../mcp/index.mjs';
+import { McpServerManager, ApplicationProvider } from '../mcp/index.mjs';
 import { McpServer } from '../mcp/types.mjs';
 
 // The ai proposes a plan that we expect to contain both files and commands
@@ -51,7 +49,7 @@ import { McpServer } from '../mcp/types.mjs';
  * </plan>
  */
 
-interface FileAction {
+export interface FileAction {
   type: 'file';
   dirname: string;
   basename: string;
@@ -71,7 +69,7 @@ type NpmInstallCommand = {
 /**
  * Represents an MCP tool action that can be executed by the McpHub.
  */
-type McpToolAction = {
+export type McpToolAction = {
   type: 'mcpTool';
   serverName: string;
   toolId: string;
@@ -234,9 +232,10 @@ export function getPackagesToInstall(plan: Plan): string[] {
  * Executes all MCP tool actions in a plan.
  *
  * @param plan The plan containing MCP tool actions to execute
+ * @param provider The application provider instance
  * @returns A Promise that resolves when all MCP tool actions have been executed
  */
-export async function executeMcpToolActions(plan: Plan): Promise<void> {
+export async function executeMcpToolActions(plan: Plan, provider: ApplicationProvider): Promise<void> {
   // Get all MCP tool actions from the plan
   const mcpToolActions = plan.actions.filter(
     (action): action is McpToolAction => action.type === 'mcpTool'

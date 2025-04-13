@@ -53,3 +53,9 @@ srcbook_mcp_config.json
 
 # Reference Code
 mcp-references/
+
+#supabase MCP
+supabase-mcp/
+
+# Roo Code
+.roomodes

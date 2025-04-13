@@ -173,8 +173,8 @@ async function getMcpTools(): Promise<Record<string, Tool>> {
     // Create a default application provider for MCP
     const provider = new DefaultApplicationProvider('Srcbook', '1.0.0', process.cwd());
     
-    // Get the MCP server manager instance
-    const serverManager = await McpServerManager.getInstance(provider);
+    // Initialize the MCP client (but don't store the unused reference)
+    await McpServerManager.getInstance(provider);
     
     // Get all connected servers
     const servers = await McpServerManager.getConnectedServers();

@@ -5,7 +5,6 @@
  */
 
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import { z } from 'zod';
 import {
   Client
@@ -22,18 +21,13 @@ import {
   McpServer,
   McpServerConfig,
   McpServerSource,
-  McpServerStatus,
   McpTool,
   McpToolCallResponse,
   McpResource,
   McpResourceResponse,
   McpResourceTemplate,
-  McpSettings,
   McpConnection,
-  McpStdioServerConfig,
-  McpSseServerConfig,
   McpPrompt,
-  McpPromptResponse
 } from './types.mjs';
 
 /**
@@ -50,10 +44,6 @@ const BaseConfigSchema = z.object({
  * Custom error messages for better user feedback
  */
 const typeErrorMessage = "Server type must be either 'stdio' or 'sse'";
-const stdioFieldsErrorMessage = "For 'stdio' type servers, you must provide a 'command' field and can optionally include 'args' and 'env'";
-const sseFieldsErrorMessage = "For 'sse' type servers, you must provide a 'url' field and can optionally include 'headers'";
-const mixedFieldsErrorMessage = "Cannot mix 'stdio' and 'sse' fields. For 'stdio' use 'command', 'args', and 'env'. For 'sse' use 'url' and 'headers'";
-const missingFieldsErrorMessage = "Server configuration must include either 'command' (for stdio) or 'url' (for sse)";
 
 /**
  * Helper function to create a refined schema with better error messages
@@ -942,7 +932,7 @@ export class McpHub {
    * @param serverName The name of the server
    * @param source The source of the server configuration
    */
-  onServerConnected(serverName: string, source: McpServerSource): void {
+  onServerConnected(serverName: string): void {
     this.provider.log(`Server ${serverName} connected`);
     // In a real implementation, you would emit an event
   }
@@ -952,7 +942,7 @@ export class McpHub {
    * @param serverName The name of the server
    * @param source The source of the server configuration
    */
-  onServerDisconnected(serverName: string, source: McpServerSource): void {
+  onServerDisconnected(serverName: string): void {
     this.provider.log(`Server ${serverName} disconnected`);
     // In a real implementation, you would emit an event
   }

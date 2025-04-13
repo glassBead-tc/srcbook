@@ -6,16 +6,12 @@
 
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
-import * as path from 'path';
 import { EventEmitter } from 'events';
 
 import { McpHub } from './McpHub.mjs';
 import { ApplicationProvider } from './ApplicationProvider.mjs';
 import {
   McpServer,
-  McpServerConfig,
-  McpServerSource,
-  McpServerStatus,
   McpTool,
   McpToolCallResponse,
   McpResource,
@@ -40,7 +36,6 @@ export enum McpServerManagerEvents {
  */
 export class McpServerManager extends EventEmitter {
   private static instance: McpHub | null = null;
-  private static readonly GLOBAL_STATE_KEY = 'mcpHubInstanceId';
   private static providers: Set<ApplicationProvider> = new Set();
   private static initializationPromise: Promise<McpHub> | null = null;
   private static refCount: number = 0;

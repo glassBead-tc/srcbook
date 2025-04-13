@@ -1,34 +1,49 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { McpServerManager, McpServerManagerEvents } from '../../mcp/McpServerManager.mjs';
 import { McpHub } from '../../mcp/McpHub.mjs';
+import { McpServerManager } from '../../mcp/McpServerManager.mjs';
 import { ApplicationProvider } from '../../mcp/ApplicationProvider.mjs';
 import { McpServerConfig } from '../../mcp/types.mjs';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
+import { MockApplicationProvider, setupConsoleSpy } from '../test-helpers.mjs';
 
-// Mock the McpHub
+// Mock McpHub
+const mockMcpHub = {
+  updateServerConnections: vi.fn().mockResolvedValue(undefined),
+  connectToServer: vi.fn().mockResolvedValue(undefined),
+  deleteConnection: vi.fn().mockResolvedValue(undefined),
+  getServers: vi.fn().mockReturnValue([]),
+  getToolsList: vi.fn().mockResolvedValue([]),
+  getResourcesList: vi.fn().mockResolvedValue([]),
+  executeTool: vi.fn().mockResolvedValue({ result: 'success' }),
+  accessResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
+  dispose: vi.fn().mockResolvedValue(undefined),
+};
+
+// Mock the McpHub module
 vi.mock('../../mcp/McpHub.mjs', () => ({
   McpHub: {
-    getInstance: vi.fn(),
-    initialize: vi.fn(),
-    instance: null,
-    updateServerConnections: vi.fn().mockResolvedValue(undefined),
-    connectToServer: vi.fn().mockResolvedValue(undefined),
-    deleteConnection: vi.fn().mockResolvedValue(undefined),
-    getServers: vi.fn().mockReturnValue([]),
-    getToolsList: vi.fn().mockResolvedValue([]),
-    getResourcesList: vi.fn().mockResolvedValue([]),
-    executeTool: vi.fn().mockResolvedValue({ result: 'success' }),
-    accessResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
-    dispose: vi.fn().mockResolvedValue(undefined),
-  },
+    getInstance: vi.fn().mockResolvedValue(mockMcpHub),
+    initialize: vi.fn().mockReturnValue(mockMcpHub),
+  }
 }));
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn().mockResolvedValue('{"mcpServers": {}}'),
-  writeFile: vi.fn().mockResolvedValue(undefined),
+  readFile: vi.fn().mockImplementation((path) => {
+    // Default config for most tests
+    return Promise.resolve(JSON.stringify({
+      mcpServers: {
+        'test-server': {
+          type: 'stdio',
+          command: 'node',
+          args: ['server.js'],
+        },
+      },
+    }));
+  }),
   mkdir: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined),
   access: vi.fn().mockResolvedValue(undefined),
   stat: vi.fn().mockResolvedValue({ mtimeMs: 123456789 }),
 }));
@@ -40,44 +55,9 @@ vi.mock('fs', () => ({
   }),
 }));
 
-// Create a mock ApplicationProvider
-class MockApplicationProvider implements ApplicationProvider {
-  getApplicationName(): string {
-    return 'test-app';
-  }
-
-  getApplicationVersion(): string {
-    return '1.0.0';
-  }
-
-  async ensureDirectoryExists(dirPath: string): Promise<string> {
-    return dirPath;
-  }
-
-  async getMcpServersPath(): Promise<string> {
-    return '/test/mcp-servers';
-  }
-
-  async getMcpSettingsFilePath(): Promise<string> {
-    return '/test/settings/mcp-settings.json';
-  }
-
-  async fileExistsAtPath(filePath: string): Promise<boolean> {
-    return true;
-  }
-
-  async postMessageToUi(message: any): Promise<void> {
-    // Do nothing
-  }
-
-  log(message: string): void {
-    // Do nothing
-  }
-}
-
 describe('McpServerManager', () => {
   let provider: ApplicationProvider;
-  let mockMcpHub: any;
+  let consoleSpy: ReturnType<typeof setupConsoleSpy>;
 
   beforeEach(() => {
     // Reset mocks
@@ -85,6 +65,7 @@ describe('McpServerManager', () => {
     
     // Create a new provider for each test
     provider = new MockApplicationProvider();
+    consoleSpy = setupConsoleSpy();
     
     // Reset static properties
     McpServerManager['instance'] = null;
@@ -93,22 +74,6 @@ describe('McpServerManager', () => {
     McpServerManager['refCount'] = 0;
     McpServerManager['configWatcher'] = null;
     McpServerManager['initialized'] = false;
-    
-    // Set up mock McpHub
-    mockMcpHub = {
-      updateServerConnections: vi.fn().mockResolvedValue(undefined),
-      connectToServer: vi.fn().mockResolvedValue(undefined),
-      deleteConnection: vi.fn().mockResolvedValue(undefined),
-      getServers: vi.fn().mockReturnValue([]),
-      getToolsList: vi.fn().mockResolvedValue([]),
-      getResourcesList: vi.fn().mockResolvedValue([]),
-      executeTool: vi.fn().mockResolvedValue({ result: 'success' }),
-      accessResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
-      dispose: vi.fn().mockResolvedValue(undefined),
-    };
-    
-    // Mock McpHub.getInstance to return our mock
-    (McpHub.getInstance as any).mockResolvedValue(mockMcpHub);
   });
 
   afterEach(async () => {
@@ -156,17 +121,6 @@ describe('McpServerManager', () => {
 
   describe('Configuration Management', () => {
     it('should load configuration from the config file', async () => {
-      // Mock readFile to return a specific configuration
-      (fs.readFile as any).mockResolvedValueOnce(JSON.stringify({
-        mcpServers: {
-          'test-server': {
-            type: 'stdio',
-            command: 'node',
-            args: ['server.js'],
-          },
-        },
-      }));
-      
       await McpServerManager.getInstance(provider);
       
       // Verify that updateServerConnections was called with the correct arguments
@@ -190,7 +144,7 @@ describe('McpServerManager', () => {
     });
 
     it('should handle invalid configuration file', async () => {
-      // Mock readFile to return invalid JSON
+      // Mock readFile to return invalid JSON for this specific test
       (fs.readFile as any).mockResolvedValueOnce('invalid json');
       
       await McpServerManager.getInstance(provider);
@@ -210,23 +164,12 @@ describe('McpServerManager', () => {
     });
 
     it('should reload configuration when the file changes', async () => {
-      // Mock readFile to return a specific configuration
-      (fs.readFile as any).mockResolvedValueOnce(JSON.stringify({
-        mcpServers: {
-          'test-server': {
-            type: 'stdio',
-            command: 'node',
-            args: ['server.js'],
-          },
-        },
-      }));
-      
       await McpServerManager.getInstance(provider);
       
       // Reset the mock to verify it's called again
       mockMcpHub.updateServerConnections.mockClear();
       
-      // Mock readFile to return a different configuration
+      // Mock readFile to return a different configuration for this specific test
       (fs.readFile as any).mockResolvedValueOnce(JSON.stringify({
         mcpServers: {
           'test-server-2': {
@@ -252,17 +195,6 @@ describe('McpServerManager', () => {
 
   describe('Server Management', () => {
     it('should connect to a server', async () => {
-      // Mock readFile to return a specific configuration
-      (fs.readFile as any).mockResolvedValueOnce(JSON.stringify({
-        mcpServers: {
-          'test-server': {
-            type: 'stdio',
-            command: 'node',
-            args: ['server.js'],
-          },
-        },
-      }));
-      
       await McpServerManager.getInstance(provider);
       
       // Reset the mock to verify it's called again

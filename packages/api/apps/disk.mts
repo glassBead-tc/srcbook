@@ -8,7 +8,9 @@ import { APPS_DIR } from '../constants.mjs';
 import { toValidPackageName } from './utils.mjs';
 import { DirEntryType, FileEntryType, FileType } from '@srcbook/shared';
 import { FileContent } from '../ai/app-parser.mjs';
-import type { Plan } from '../ai/plan-parser.mjs';
+import type { Plan, McpToolAction, FileAction } from '../ai/plan-parser.mjs';
+import { executeMcpToolActions } from '../ai/plan-parser.mjs';
+import { ApplicationProvider } from '../mcp/ApplicationProvider.mjs';
 import archiver from 'archiver';
 import { wss } from '../index.mjs';
 
@@ -41,19 +43,116 @@ export function deleteViteApp(id: string) {
   return fs.rm(pathToApp(id), { recursive: true });
 }
 
-export async function applyPlan(app: DBAppType, plan: Plan) {
+/**
+ * Applies a plan to an app, executing both file actions and MCP tool actions.
+ *
+ * This function processes actions in the order they appear in the plan, with special
+ * handling for consecutive MCP tool actions which are batched together for efficiency.
+ *
+ * @param app The database app object
+ * @param plan The plan containing actions to execute
+ * @param provider The application provider for MCP operations
+ * @returns A Promise that resolves when all actions have been executed
+ */
+export async function applyPlan(app: DBAppType, plan: Plan, provider?: ApplicationProvider) {
+  // Statistics for reporting
+  const stats = {
+    fileActionsProcessed: 0,
+    mcpToolActionsProcessed: 0,
+    errors: 0
+  };
+
   try {
-    for (const item of plan.actions) {
+    // Process actions in order, but batch consecutive MCP tool actions
+    let currentBatch: McpToolAction[] = [];
+    let batchingMcpTools = false;
+
+    for (let i = 0; i < plan.actions.length; i++) {
+      const item = plan.actions[i];
+      
+      if (!item) continue; // Skip undefined items (shouldn't happen, but TypeScript needs this check)
+
       if (item.type === 'file') {
-        const basename = Path.basename(item.path);
-        await writeFile(app, {
-          path: item.path,
-          name: basename,
-          source: item.modified,
-          binary: isBinary(basename),
-        });
+        // If we were batching MCP tool actions, execute the batch before processing file actions
+        if (batchingMcpTools && currentBatch.length > 0) {
+          if (provider) {
+            try {
+              // Create a temporary plan with just the batched MCP tool actions
+              const batchPlan: Plan = {
+                ...plan,
+                actions: currentBatch
+              };
+              await executeMcpToolActions(batchPlan, provider);
+              stats.mcpToolActionsProcessed += currentBatch.length;
+            } catch (error) {
+              console.error('Error executing batched MCP tool actions:', error);
+              stats.errors++;
+            }
+          } else {
+            console.warn('Skipping MCP tool actions because no ApplicationProvider was provided');
+          }
+          
+          // Reset the batch
+          currentBatch = [];
+          batchingMcpTools = false;
+        }
+
+        // Process file action
+        try {
+          const fileAction = item as FileAction;
+          const basename = Path.basename(fileAction.path);
+          await writeFile(app, {
+            path: fileAction.path,
+            name: basename,
+            source: fileAction.modified,
+            binary: isBinary(basename),
+          });
+          stats.fileActionsProcessed++;
+        } catch (error) {
+          console.error(`Error processing file action:`, error);
+          stats.errors++;
+        }
+      } else if (item.type === 'mcpTool') {
+        // Start or continue batching MCP tool actions
+        batchingMcpTools = true;
+        currentBatch.push(item as McpToolAction);
+        
+        // If this is the last action or the next action is not an MCP tool action,
+        // execute the batch now
+        const isLastAction = i === plan.actions.length - 1;
+        const nextAction = plan.actions[i + 1];
+        const nextActionNotMcpTool = !isLastAction && nextAction && nextAction.type !== 'mcpTool';
+        
+        if (isLastAction || nextActionNotMcpTool) {
+          if (provider) {
+            try {
+              // Create a temporary plan with just the batched MCP tool actions
+              const batchPlan: Plan = {
+                ...plan,
+                actions: currentBatch
+              };
+              await executeMcpToolActions(batchPlan, provider);
+              stats.mcpToolActionsProcessed += currentBatch.length;
+            } catch (error) {
+              console.error('Error executing batched MCP tool actions:', error);
+              stats.errors++;
+            }
+          } else {
+            console.warn('Skipping MCP tool actions because no ApplicationProvider was provided');
+          }
+          
+          // Reset the batch
+          currentBatch = [];
+          batchingMcpTools = false;
+        }
       }
+      // Other action types can be handled here in the future
     }
+
+    // Log execution statistics
+    console.log(`Plan execution completed: ${stats.fileActionsProcessed} file actions, ${stats.mcpToolActionsProcessed} MCP tool actions, ${stats.errors} errors`);
+    
+    return stats;
   } catch (e) {
     console.error('Error applying plan to app', app.externalId, e);
     throw e;

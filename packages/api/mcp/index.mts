@@ -6,6 +6,10 @@
 // Export types
 export * from './types.mjs';
 
+// Import required dependencies for local use
+import { type ApplicationProvider } from './ApplicationProvider.mjs';
+import { McpServerManager } from './McpServerManager.mjs';
+
 // Export ApplicationProvider
 export { 
   type ApplicationProvider,
