@@ -49,3 +49,7 @@ vite.config.ts.timestamp-*.mjs
 
 # AI Docs
 llms.txt
+srcbook_mcp_config.json
+
+# Reference Code
+mcp-references/
