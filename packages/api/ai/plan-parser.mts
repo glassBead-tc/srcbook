@@ -247,7 +247,7 @@ export async function executeMcpToolActions(plan: Plan): Promise<void> {
   }
   
   // Get the McpHub instance
-  const mcpHub = McpHub.getInstance(McpServerManager.getApplicationProvider());
+  const mcpHub = await McpServerManager.getInstance(provider);
   
   // Execute each MCP tool action
   for (const action of mcpToolActions) {
