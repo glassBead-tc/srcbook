@@ -3,9 +3,10 @@ import Path from 'node:path';
 import { StreamingXMLParser, type TagType } from '../ai/stream-xml-parser.mjs';
 
 const filepath = new URL(import.meta.url).pathname;
+const testDir = Path.dirname(filepath);
 
 function getExampleChunks(filename: string) {
-  const chunkLines = fs.readFileSync(Path.resolve(filepath, filename), 'utf-8');
+  const chunkLines = fs.readFileSync(Path.join(testDir, filename), 'utf-8');
   return chunkLines
     .split('\n')
     .filter((line) => line.trim() !== '')
@@ -22,7 +23,7 @@ describe('parsePlan', () => {
         }
       },
     });
-    getExampleChunks('../plan-chunks.txt').forEach((chunk) => parser.parse(chunk));
+    getExampleChunks('plan-chunks.txt').forEach((chunk) => parser.parse(chunk));
     expect(tags).toEqual([
       {
         name: 'planDescription',
@@ -109,7 +110,7 @@ export const playlists: PlaylistItem[] = [
         }
       },
     });
-    getExampleChunks('../plan-chunks-2.txt').forEach((chunk) => parser.parse(chunk));
+    getExampleChunks('plan-chunks-2.txt').forEach((chunk) => parser.parse(chunk));
     expect(tags).toEqual([
       {
         name: 'planDescription',

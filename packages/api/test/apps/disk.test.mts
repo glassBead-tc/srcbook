@@ -55,7 +55,7 @@ vi.mock('../../mcp/McpServerManager.mjs', () => ({
   McpServerManager: {
     getInstance: vi.fn().mockResolvedValue({
       getServers: vi.fn().mockReturnValue([{ name: 'supabase', status: 'connected' }]),
-      callTool: vi.fn().mockImplementation((toolId: string) => {
+      callTool: vi.fn().mockImplementation((serverName, toolId) => {
         if (toolId === 'list_projects') {
           return Promise.resolve({
             result: {
@@ -70,6 +70,13 @@ vi.mock('../../mcp/McpServerManager.mjs', () => ({
             result: {
               success: true,
               data: [{ id: 1, name: 'Test Entry', content: 'Test data' }]
+            }
+          });
+        } else if (toolId === 'list_tables') {
+          return Promise.resolve({
+            result: { 
+              success: true, 
+              data: [{ name: "test_table" }, { name: "users" }] 
             }
           });
         }

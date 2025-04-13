@@ -1,20 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpHub } from '../../mcp/McpHub.mjs';
 import { ApplicationProvider } from '../../mcp/ApplicationProvider.mjs';
-import { McpServerConfig, McpServerStatus, McpTool, McpResource, McpPrompt } from '../../mcp/types.mjs';
+import { McpServerConfig } from '../../mcp/types.mjs';
+
+// Create a mock client factory that can be updated in tests
+const mockClientFactory = () => ({
+  connect: vi.fn().mockResolvedValue(undefined),
+  listTools: vi.fn().mockResolvedValue({ tools: [] }),
+  listResources: vi.fn().mockResolvedValue({ resources: [] }),
+  listResourceTemplates: vi.fn().mockResolvedValue({ templates: [] }),
+  listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
+  callTool: vi.fn().mockResolvedValue({ result: 'success' }),
+  readResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
+});
 
 // Mock the SDK client
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
-  Client: vi.fn().mockImplementation(() => ({
-    connect: vi.fn().mockResolvedValue(undefined),
-    listTools: vi.fn().mockResolvedValue({ tools: [] }),
-    listResources: vi.fn().mockResolvedValue({ resources: [] }),
-    listResourceTemplates: vi.fn().mockResolvedValue({ templates: [] }),
-    listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
-    callTool: vi.fn().mockResolvedValue({ result: 'success' }),
-    readResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
-  })),
-}));
+vi.mock('@modelcontextprotocol/sdk/client/index.js', () => {
+  return {
+    Client: vi.fn().mockImplementation(() => mockClientFactory())
+  };
+});
 
 // Mock the transports
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
@@ -59,15 +64,16 @@ class MockApplicationProvider implements ApplicationProvider {
     return '/test/settings/mcp-settings.json';
   }
 
-  async fileExistsAtPath(filePath: string): Promise<boolean> {
+
+  async fileExistsAtPath(_filePath: string): Promise<boolean> {
     return true;
   }
 
-  async postMessageToUi(message: any): Promise<void> {
+  async postMessageToUi(_message: any): Promise<void> {
     // Do nothing
   }
 
-  log(message: string): void {
+  log(_message: string): void {
     // Do nothing
   }
 }
@@ -183,8 +189,11 @@ describe('McpHub', () => {
     beforeEach(async () => {
       mcpHub = McpHub.getInstance(provider);
       
-      // Mock the listTools method to return test tools
-      const mockClient = {
+      // Get the mocked Client constructor
+      const Client = require('@modelcontextprotocol/sdk/client/index.js').Client;
+      
+      // Reset it to a new implementation with test tools
+      Client.mockImplementation(() => ({
         connect: vi.fn().mockResolvedValue(undefined),
         listTools: vi.fn().mockResolvedValue({
           tools: [
@@ -206,7 +215,7 @@ describe('McpHub', () => {
         }),
         callTool: vi.fn().mockResolvedValue({ result: 'success' }),
         readResource: vi.fn().mockResolvedValue({ content: 'resource content' }),
-      };
+      }));
       
       // Connect to a test server
       const config: McpServerConfig = {
@@ -214,10 +223,6 @@ describe('McpHub', () => {
         command: 'node',
         args: ['server.js'],
       };
-      
-      // Mock the Client constructor to return our mock client
-      const Client = require('@modelcontextprotocol/sdk/client/index.js').Client;
-      Client.mockImplementation(() => mockClient);
       
       await mcpHub.connectToServer('test-server', config);
     });
@@ -308,8 +313,11 @@ describe('McpHub', () => {
     beforeEach(async () => {
       mcpHub = McpHub.getInstance(provider);
       
-      // Mock the client methods
-      const mockClient = {
+      // Get the mocked Client constructor
+      const Client = require('@modelcontextprotocol/sdk/client/index.js').Client;
+      
+      // Reset it to a new implementation with test data
+      Client.mockImplementation(() => ({
         connect: vi.fn().mockResolvedValue(undefined),
         listTools: vi.fn().mockResolvedValue({
           tools: [
@@ -322,8 +330,8 @@ describe('McpHub', () => {
           ],
         }),
         callTool: vi.fn().mockResolvedValue({ result: 'success' }),
-        readResource: vi.fn().mockResolvedValue({ content: 'resource content', mime_type: 'text/plain' }),
-      };
+        readResource: vi.fn().mockResolvedValue({ content: 'resource content', mimeType: 'text/plain' }),
+      }));
       
       // Connect to a test server
       const config: McpServerConfig = {
@@ -331,10 +339,6 @@ describe('McpHub', () => {
         command: 'node',
         args: ['server.js'],
       };
-      
-      // Mock the Client constructor to return our mock client
-      const Client = require('@modelcontextprotocol/sdk/client/index.js').Client;
-      Client.mockImplementation(() => mockClient);
       
       await mcpHub.connectToServer('test-server', config);
     });

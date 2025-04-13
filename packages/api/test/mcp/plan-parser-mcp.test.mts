@@ -18,7 +18,7 @@ const mockGitHubIssues = [
 
 // Mock the fs module
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn().mockImplementation((path, encoding) => {
+  readFile: vi.fn().mockImplementation((path) => {
     if (path.includes('srcbook_mcp_config.json') || path.includes('mcp-settings.json')) {
       return Promise.resolve(JSON.stringify({
         mcpServers: {
@@ -57,7 +57,7 @@ vi.mock('../../mcp/McpServerManager.mjs', () => ({
       getServers: vi.fn().mockReturnValue([
         { name: 'github', status: 'connected' }
       ]),
-      callTool: vi.fn().mockImplementation((serverName, toolId, args) => {
+      callTool: vi.fn().mockImplementation((serverName, toolId) => {
         if (serverName === 'github' && toolId === 'searchIssues') {
           return Promise.resolve({ 
             result: {
@@ -99,9 +99,9 @@ class MockApplicationProvider implements ApplicationProvider {
   async ensureDirectoryExists(dirPath: string): Promise<string> { return dirPath; }
   async getMcpServersPath(): Promise<string> { return '/test/mcp-servers'; }
   async getMcpSettingsFilePath(): Promise<string> { return '/test/settings/mcp-settings.json'; }
-  async fileExistsAtPath(filePath: string): Promise<boolean> { return true; }
-  async postMessageToUi(message: any): Promise<void> {}
-  log(message: string): void {}
+  async fileExistsAtPath(_filePath: string): Promise<boolean> { return true; }
+  async postMessageToUi(_message: any): Promise<void> {}
+  log(_message: string): void {}
 }
 
 const mockApp: DBAppType = {

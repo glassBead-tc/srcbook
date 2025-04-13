@@ -1,13 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { McpHub } from '../../mcp/McpHub.mjs';
-import { McpServerManager } from '../../mcp/McpServerManager.mjs';
-import { ApplicationProvider } from '../../mcp/ApplicationProvider.mjs';
-import { McpServerConfig } from '../../mcp/types.mjs';
-import * as fs from 'fs/promises';
-import * as fsSync from 'fs';
-import { MockApplicationProvider, setupConsoleSpy } from '../test-helpers.mjs';
+import { MockApplicationProvider} from '../test-helpers.mjs';
 
-// Mock McpHub
+// Create mock objects before vi.mock calls
 const mockMcpHub = {
   updateServerConnections: vi.fn().mockResolvedValue(undefined),
   connectToServer: vi.fn().mockResolvedValue(undefined),
@@ -30,7 +24,7 @@ vi.mock('../../mcp/McpHub.mjs', () => ({
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
-  readFile: vi.fn().mockImplementation((path) => {
+  readFile: vi.fn().mockImplementation(() => {
     // Default config for most tests
     return Promise.resolve(JSON.stringify({
       mcpServers: {
@@ -55,9 +49,14 @@ vi.mock('fs', () => ({
   }),
 }));
 
+import { McpHub } from '../../mcp/McpHub.mjs';
+import { McpServerManager } from '../../mcp/McpServerManager.mjs';
+import { ApplicationProvider } from '../../mcp/ApplicationProvider.mjs';
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
+
 describe('McpServerManager', () => {
   let provider: ApplicationProvider;
-  let consoleSpy: ReturnType<typeof setupConsoleSpy>;
 
   beforeEach(() => {
     // Reset mocks
@@ -65,7 +64,6 @@ describe('McpServerManager', () => {
     
     // Create a new provider for each test
     provider = new MockApplicationProvider();
-    consoleSpy = setupConsoleSpy();
     
     // Reset static properties
     McpServerManager['instance'] = null;
