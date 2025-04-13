@@ -67,8 +67,19 @@ export type CommandActionChunkType = {
   packages: string[];
 };
 
+/**
+ * Represents an MCP tool action that can be executed by the McpHub.
+ */
+export type McpToolActionChunkType = {
+  type: 'mcpTool';
+  description: string;
+  serverName: string;
+  toolId: string;
+  arguments: Record<string, any>;
+};
+
 export type ActionChunkType = {
   type: 'action';
   planId: string;
-  data: FileActionChunkType | CommandActionChunkType;
+  data: FileActionChunkType | CommandActionChunkType | McpToolActionChunkType;
 };

@@ -3,7 +3,15 @@ import Path from 'node:path';
 import { type App as DBAppType } from '../db/schema.mjs';
 import { loadFile } from '../apps/disk.mjs';
 import { StreamingXMLParser, TagType } from './stream-xml-parser.mjs';
-import { ActionChunkType, DescriptionChunkType } from '@srcbook/shared';
+import {
+  ActionChunkType,
+  DescriptionChunkType,
+  FileActionChunkType,
+  CommandActionChunkType,
+  McpToolActionChunkType
+} from '../../shared/src/types/history.mjs';
+import { McpServerManager, McpHub } from '../mcp/index.mjs';
+import { McpServer } from '../mcp/types.mjs';
 
 // The ai proposes a plan that we expect to contain both files and commands
 // Here is an example of a plan:
@@ -60,6 +68,17 @@ type NpmInstallCommand = {
   description: string;
 };
 
+/**
+ * Represents an MCP tool action that can be executed by the McpHub.
+ */
+type McpToolAction = {
+  type: 'mcpTool';
+  serverName: string;
+  toolId: string;
+  arguments: Record<string, any>;
+  description: string;
+};
+
 // Later we can add more commands. For now, we only support npm install
 type Command = NpmInstallCommand;
 
@@ -69,8 +88,10 @@ export interface Plan {
   id: string;
   query: string;
   description: string;
-  actions: (FileAction | Command)[];
+  actions: (FileAction | Command | McpToolAction)[];
 }
+
+
 
 interface ParsedResult {
   plan: {
@@ -82,6 +103,10 @@ interface ParsedResult {
           file?: { '@_filename': string; '#text': string };
           commandType?: string;
           package?: string | string[];
+          // MCP tool fields
+          serverName?: string;
+          toolId?: string;
+          arguments?: string | Record<string, any>;
         }[]
       | {
           '@_type': string;
@@ -89,6 +114,10 @@ interface ParsedResult {
           file?: { '@_filename': string; '#text': string };
           commandType?: string;
           package?: string | string[];
+          // MCP tool fields
+          serverName?: string;
+          toolId?: string;
+          arguments?: string | Record<string, any>;
         };
   };
 }
@@ -151,6 +180,38 @@ export async function parsePlan(
           packages: Array.isArray(action.package) ? action.package : [action.package],
           description: action.description,
         });
+      } else if (action['@_type'] === 'mcpTool') {
+        // Handle MCP tool action
+        const serverName = action.serverName;
+        const toolId = action.toolId;
+        const args = action.arguments;
+        
+        if (!serverName || !toolId) {
+          console.error('Invalid MCP tool action: missing serverName or toolId');
+          continue;
+        }
+        
+        // Parse arguments as JSON if it's a string
+        let parsedArgs: Record<string, any> = {};
+        if (args) {
+          if (typeof args === 'string') {
+            try {
+              parsedArgs = JSON.parse(args);
+            } catch (error) {
+              console.error('Failed to parse MCP tool arguments:', error);
+            }
+          } else {
+            parsedArgs = args;
+          }
+        }
+        
+        plan.actions.push({
+          type: 'mcpTool',
+          serverName,
+          toolId,
+          arguments: parsedArgs,
+          description: action.description,
+        });
       }
     }
 
@@ -160,7 +221,6 @@ export async function parsePlan(
     throw new Error('Failed to parse XML response');
   }
 }
-
 export function getPackagesToInstall(plan: Plan): string[] {
   return plan.actions
     .filter(
@@ -169,6 +229,57 @@ export function getPackagesToInstall(plan: Plan): string[] {
     )
     .flatMap((action) => action.packages);
 }
+
+/**
+ * Executes all MCP tool actions in a plan.
+ *
+ * @param plan The plan containing MCP tool actions to execute
+ * @returns A Promise that resolves when all MCP tool actions have been executed
+ */
+export async function executeMcpToolActions(plan: Plan): Promise<void> {
+  // Get all MCP tool actions from the plan
+  const mcpToolActions = plan.actions.filter(
+    (action): action is McpToolAction => action.type === 'mcpTool'
+  );
+  
+  if (mcpToolActions.length === 0) {
+    return;
+  }
+  
+  // Get the McpHub instance
+  const mcpHub = McpHub.getInstance(McpServerManager.getApplicationProvider());
+  
+  // Execute each MCP tool action
+  for (const action of mcpToolActions) {
+    try {
+      // Check if the server is connected
+      const servers = mcpHub.getServers();
+      const serverExists = servers.some((server: McpServer) => server.name === action.serverName);
+      
+      if (!serverExists) {
+        console.error(`MCP server '${action.serverName}' is not connected`);
+        continue;
+      }
+      
+      // Call the tool
+      const response = await mcpHub.callTool(
+        action.serverName,
+        action.toolId,
+        action.arguments
+      );
+      
+      // Log the result
+      if (response.error) {
+        console.error(`Error executing MCP tool '${action.toolId}' on server '${action.serverName}': ${response.error}`);
+      } else {
+        console.log(`Successfully executed MCP tool '${action.toolId}' on server '${action.serverName}'`);
+      }
+    } catch (error) {
+      console.error(`Failed to execute MCP tool '${action.toolId}' on server '${action.serverName}':`, error);
+    }
+  }
+}
+
 export async function streamParsePlan(
   stream: AsyncIterable<string>,
   app: DBAppType,
@@ -217,6 +328,14 @@ export async function streamParsePlan(
   });
 }
 
+/**
+ * Converts a parsed XML tag into a streaming chunk for the client.
+ *
+ * @param app The database app object
+ * @param tag The parsed XML tag
+ * @param planId The ID of the current plan
+ * @returns A description or action chunk, or null if the tag is not recognized
+ */
 async function toStreamingChunk(
   app: DBAppType,
   tag: TagType,
@@ -274,6 +393,45 @@ async function toStreamingChunk(
             packages: packageTags.map((t) => t.content),
           },
         } as ActionChunkType;
+      } else if (type === 'mcpTool') {
+        // Handle MCP tool action
+        const serverNameTag = tag.children.find((t) => t.name === 'serverName')!;
+        const toolIdTag = tag.children.find((t) => t.name === 'toolId')!;
+        const argumentsTag = tag.children.find((t) => t.name === 'arguments');
+        
+        if (!serverNameTag || !toolIdTag) {
+          console.error('Invalid MCP tool action: missing serverName or toolId');
+          return null;
+        }
+        
+        const serverName = serverNameTag.content;
+        const toolId = toolIdTag.content;
+        
+        // Parse arguments as JSON
+        let parsedArguments: Record<string, any> = {};
+        try {
+          if (argumentsTag) {
+            parsedArguments = JSON.parse(argumentsTag.content);
+          }
+        } catch (error) {
+          console.error('Failed to parse MCP tool arguments:', error);
+          // Return a default empty object if parsing fails
+        }
+        
+        // Create the action chunk with the correct type
+        const mcpToolData: McpToolActionChunkType = {
+          type: 'mcpTool',
+          description,
+          serverName,
+          toolId,
+          arguments: parsedArguments,
+        };
+        
+        return {
+          type: 'action',
+          planId: planId,
+          data: mcpToolData
+        };
       } else {
         return null;
       }
