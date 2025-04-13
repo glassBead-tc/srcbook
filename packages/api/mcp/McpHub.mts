@@ -22,7 +22,9 @@ import {
   McpSettings,
   McpConnection,
   McpStdioServerConfig,
-  McpSseServerConfig
+  McpSseServerConfig,
+  McpPrompt,
+  McpPromptResponse
 } from './types';
 
 /**
@@ -112,6 +114,13 @@ export class McpHub {
   
   /** Whether the hub is currently connecting to a server */
   isConnecting: boolean = false;
+
+  /** Cached aggregated capabilities */
+  private cachedTools: McpTool[] | null = null;
+  private cachedResources: McpResource[] | null = null;
+  private cachedPrompts: McpPrompt[] | null = null;
+  private lastCacheUpdate: number = 0;
+  private readonly CACHE_TTL = 60000; // 1 minute cache TTL
 
   /**
    * Create a new McpHub instance.
@@ -379,6 +388,42 @@ export class McpHub {
   }
 
   /**
+   * Get the list of prompts provided by a server.
+   * @param serverName The name of the server
+   * @param source Optional source of the server configuration
+   * @returns Array of prompts provided by the server
+   */
+  async getPromptsList(serverName: string, source?: McpServerSource): Promise<McpPrompt[]> {
+    const connection = this.findConnection(serverName, source);
+    
+    if (!connection) {
+      this.provider.log(`Server ${serverName} not found`);
+      return [];
+    }
+    
+    try {
+      const response = await connection.client.listPrompts();
+      
+      if (!response || !response.prompts) {
+        return [];
+      }
+      
+      // Map the prompts to our internal format
+      return response.prompts.map((prompt: any) => ({
+        id: prompt.id,
+        name: prompt.name || prompt.id,
+        description: prompt.description || '',
+        template: prompt.template || '',
+        parameters: prompt.parameters || {},
+        server: serverName
+      }));
+    } catch (error) {
+      this.provider.log(`Failed to get prompts list from server ${serverName}: ${error}`);
+      return [];
+    }
+  }
+
+  /**
    * Call a tool provided by a server.
    * @param serverName The name of the server
    * @param toolId The ID of the tool to call
@@ -481,6 +526,9 @@ export class McpHub {
       }
       return conn.server.name !== name;
     });
+    
+    // Invalidate the cache when a server is disconnected
+    this.invalidateCache();
   }
 
   /**
@@ -546,6 +594,7 @@ export class McpHub {
         listTools: async () => ({ tools: [] }),
         listResources: async () => ({ resources: [] }),
         listResourceTemplates: async () => ({ templates: [] }),
+        listPrompts: async () => ({ prompts: [] }),
         callTool: async (toolId: string, args: any) => ({ result: null }),
         readResource: async (uri: string) => ({ content: '' })
       };
@@ -585,6 +634,9 @@ export class McpHub {
       if (config.watchPaths && config.watchPaths.length > 0) {
         await this.setupFileWatchers(name, config.watchPaths, source);
       }
+      
+      // Invalidate the cache when a new server is connected
+      this.invalidateCache();
       
       this.provider.log(`Connected to server ${name} (${config.type})`);
     } catch (error) {
@@ -638,11 +690,41 @@ export class McpHub {
   }
   
   /**
-   * Get all available tools from connected servers.
-   * @returns Array of all available tools
+   * Invalidate the cached capabilities.
+   * This should be called when servers connect or disconnect.
    */
-  async getTools(): Promise<McpTool[]> {
+  private invalidateCache(): void {
+    this.cachedTools = null;
+    this.cachedResources = null;
+    this.cachedPrompts = null;
+    this.lastCacheUpdate = 0;
+    this.provider.log('Capability cache invalidated');
+  }
+
+  /**
+   * Check if the cache is still valid.
+   * @returns True if the cache is valid, false otherwise
+   */
+  private isCacheValid(): boolean {
+    return (
+      this.lastCacheUpdate > 0 &&
+      Date.now() - this.lastCacheUpdate < this.CACHE_TTL
+    );
+  }
+
+  /**
+   * Aggregate tools from all connected servers.
+   * This method handles duplicate tools by keeping the first occurrence.
+   * @returns Array of aggregated tools
+   */
+  async aggregateTools(): Promise<McpTool[]> {
+    // Use cached tools if available and valid
+    if (this.cachedTools !== null && this.isCacheValid()) {
+      return this.cachedTools;
+    }
+
     const tools: McpTool[] = [];
+    const toolIds = new Set<string>();
     
     for (const connection of this.connections) {
       if (connection.server.disabled || connection.server.status !== 'connected') {
@@ -650,18 +732,37 @@ export class McpHub {
       }
       
       const serverTools = await this.getToolsList(connection.server.name, connection.server.source);
-      tools.push(...serverTools);
+      
+      // Filter out duplicate tools (by ID)
+      for (const tool of serverTools) {
+        const toolKey = `${tool.server}:${tool.id}`;
+        if (!toolIds.has(toolKey)) {
+          toolIds.add(toolKey);
+          tools.push(tool);
+        }
+      }
     }
+    
+    // Update cache
+    this.cachedTools = tools;
+    this.lastCacheUpdate = Date.now();
     
     return tools;
   }
   
   /**
-   * Get all available resources from connected servers.
-   * @returns Array of all available resources
+   * Aggregate resources from all connected servers.
+   * This method handles duplicate resources by keeping the first occurrence.
+   * @returns Array of aggregated resources
    */
-  async getResources(): Promise<McpResource[]> {
+  async aggregateResources(): Promise<McpResource[]> {
+    // Use cached resources if available and valid
+    if (this.cachedResources !== null && this.isCacheValid()) {
+      return this.cachedResources;
+    }
+
     const resources: McpResource[] = [];
+    const resourceUris = new Set<string>();
     
     for (const connection of this.connections) {
       if (connection.server.disabled || connection.server.status !== 'connected') {
@@ -669,10 +770,84 @@ export class McpHub {
       }
       
       const serverResources = await this.getResourcesList(connection.server.name, connection.server.source);
-      resources.push(...serverResources);
+      
+      // Filter out duplicate resources (by URI)
+      for (const resource of serverResources) {
+        const resourceKey = `${resource.server}:${resource.uri}`;
+        if (!resourceUris.has(resourceKey)) {
+          resourceUris.add(resourceKey);
+          resources.push(resource);
+        }
+      }
     }
     
+    // Update cache
+    this.cachedResources = resources;
+    this.lastCacheUpdate = Date.now();
+    
     return resources;
+  }
+
+  /**
+   * Aggregate prompts from all connected servers.
+   * This method handles duplicate prompts by keeping the first occurrence.
+   * @returns Array of aggregated prompts
+   */
+  async aggregatePrompts(): Promise<McpPrompt[]> {
+    // Use cached prompts if available and valid
+    if (this.cachedPrompts !== null && this.isCacheValid()) {
+      return this.cachedPrompts;
+    }
+
+    const prompts: McpPrompt[] = [];
+    const promptIds = new Set<string>();
+    
+    for (const connection of this.connections) {
+      if (connection.server.disabled || connection.server.status !== 'connected') {
+        continue;
+      }
+      
+      const serverPrompts = await this.getPromptsList(connection.server.name, connection.server.source);
+      
+      // Filter out duplicate prompts (by ID)
+      for (const prompt of serverPrompts) {
+        const promptKey = `${prompt.server}:${prompt.id}`;
+        if (!promptIds.has(promptKey)) {
+          promptIds.add(promptKey);
+          prompts.push(prompt);
+        }
+      }
+    }
+    
+    // Update cache
+    this.cachedPrompts = prompts;
+    this.lastCacheUpdate = Date.now();
+    
+    return prompts;
+  }
+  
+  /**
+   * Get all available tools from connected servers.
+   * @returns Array of all available tools
+   */
+  async getTools(): Promise<McpTool[]> {
+    return this.aggregateTools();
+  }
+  
+  /**
+   * Get all available resources from connected servers.
+   * @returns Array of all available resources
+   */
+  async getResources(): Promise<McpResource[]> {
+    return this.aggregateResources();
+  }
+
+  /**
+   * Get all available prompts from connected servers.
+   * @returns Array of all available prompts
+   */
+  async getPrompts(): Promise<McpPrompt[]> {
+    return this.aggregatePrompts();
   }
   
   /**
