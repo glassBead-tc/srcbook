@@ -4,22 +4,22 @@
  */
 
 // Export types
-export * from './types';
+export * from './types.mjs';
 
 // Export ApplicationProvider
 export { 
-  ApplicationProvider,
+  type ApplicationProvider,
   DefaultApplicationProvider
-} from './ApplicationProvider';
+} from './ApplicationProvider.mjs';
 
 // Export McpHub
 export { 
   McpHub,
   ServerConfigSchema
-} from './McpHub';
+} from './McpHub.mjs';
 
 // Export McpServerManager
-export { McpServerManager } from './McpServerManager';
+export { McpServerManager } from './McpServerManager.mjs';
 
 /**
  * Initialize the MCP client with the provided application provider.

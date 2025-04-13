@@ -5,11 +5,12 @@
  */
 
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 
-import { McpHub } from './McpHub';
-import { ApplicationProvider } from './ApplicationProvider';
+import { McpHub } from './McpHub.mjs';
+import { ApplicationProvider } from './ApplicationProvider.mjs';
 import {
   McpServer,
   McpServerConfig,
@@ -20,7 +21,7 @@ import {
   McpResource,
   McpResourceResponse,
   McpSettings
-} from './types';
+} from './types.mjs';
 
 /**
  * Events emitted by the McpServerManager
@@ -43,9 +44,10 @@ export class McpServerManager extends EventEmitter {
   private static providers: Set<ApplicationProvider> = new Set();
   private static initializationPromise: Promise<McpHub> | null = null;
   private static refCount: number = 0;
-  private static configWatcher: fs.FileHandle | null = null;
+  private static configWatcher: fsSync.FSWatcher | null = null;
   private static initialized: boolean = false;
   private static configPath: string = 'srcbook_mcp_config.json';
+  private static configLastModified: number = 0;
 
   /**
    * Get the singleton McpHub instance.
@@ -171,9 +173,30 @@ export class McpServerManager extends EventEmitter {
   private static async setupConfigWatcher(provider: ApplicationProvider): Promise<void> {
     provider.log(`McpServerManager: Setting up config watcher for ${this.configPath}`);
     
-    // In a real implementation, you would set up a file watcher
-    // For now, we'll just log that we're watching the file
-    provider.log('McpServerManager: Config watcher set up');
+    try {
+      // Get the initial file stats to track last modified time
+      const stats = await fs.stat(this.configPath);
+      this.configLastModified = stats.mtimeMs;
+      
+      // Set up a file watcher to detect changes to the config file
+      this.configWatcher = fsSync.watch(this.configPath, (eventType) => {
+        if (eventType === 'change') {
+          // Check if the file was actually modified to avoid duplicate events
+          fs.stat(this.configPath).then(stats => {
+            if (stats.mtimeMs > this.configLastModified) {
+              this.configLastModified = stats.mtimeMs;
+              this.handleConfigChange(provider);
+            }
+          }).catch(error => {
+            provider.log(`McpServerManager: Error checking file stats: ${error}`);
+          });
+        }
+      });
+      
+      provider.log('McpServerManager: Config watcher set up successfully');
+    } catch (error) {
+      provider.log(`McpServerManager: Failed to set up config watcher: ${error}`);
+    }
   }
 
   /**
@@ -404,7 +427,7 @@ export class McpServerManager extends EventEmitter {
     
     // Clean up the config watcher if it exists
     if (this.configWatcher) {
-      // In a real implementation, you would close the file watcher
+      this.configWatcher.close();
       this.configWatcher = null;
     }
     

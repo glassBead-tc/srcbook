@@ -7,8 +7,17 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { z } from 'zod';
+import {
+  Client
+} from '@modelcontextprotocol/sdk/client/index.js';
+import {
+  StdioClientTransport
+} from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  SSEClientTransport
+} from '@modelcontextprotocol/sdk/client/sse.js';
 
-import { ApplicationProvider } from './ApplicationProvider';
+import { ApplicationProvider } from './ApplicationProvider.mjs';
 import {
   McpServer,
   McpServerConfig,
@@ -25,7 +34,7 @@ import {
   McpSseServerConfig,
   McpPrompt,
   McpPromptResponse
-} from './types';
+} from './types.mjs';
 
 /**
  * Base configuration schema for common settings
@@ -516,19 +525,27 @@ export class McpHub {
       return;
     }
     
-    // TODO: Implement proper connection cleanup
     this.provider.log(`Deleting connection to server ${name}`);
     
-    // Remove the connection from the list
-    this.connections = this.connections.filter((conn) => {
-      if (source) {
-        return !(conn.server.name === name && conn.server.source === source);
+    try {
+      // Close the transport if it exists
+      if (connection.transport && typeof connection.transport.close === 'function') {
+        await connection.transport.close();
       }
-      return conn.server.name !== name;
-    });
-    
-    // Invalidate the cache when a server is disconnected
-    this.invalidateCache();
+      
+      // Remove the connection from the list
+      this.connections = this.connections.filter((conn) => {
+        if (source) {
+          return !(conn.server.name === name && conn.server.source === source);
+        }
+        return conn.server.name !== name;
+      });
+      
+      // Invalidate the cache when a server is disconnected
+      this.invalidateCache();
+    } catch (error) {
+      this.provider.log(`Error closing connection to server ${name}: ${error}`);
+    }
   }
 
   /**
@@ -566,7 +583,7 @@ export class McpHub {
    * @param config The server configuration
    * @param source The source of the server configuration
    */
-  private async connectToServer(
+  public async connectToServer(
     name: string,
     config: McpServerConfig,
     source: McpServerSource = 'global'
@@ -587,35 +604,43 @@ export class McpHub {
         errors: []
       };
       
-      // Import the MCP SDK dynamically
-      // In a real implementation, you would use the actual MCP SDK
-      // For now, we'll create a mock client
-      const client = {
-        listTools: async () => ({ tools: [] }),
-        listResources: async () => ({ resources: [] }),
-        listResourceTemplates: async () => ({ templates: [] }),
-        listPrompts: async () => ({ prompts: [] }),
-        callTool: async (toolId: string, args: any) => ({ result: null }),
-        readResource: async (uri: string) => ({ content: '' })
+      // Create a client instance with the appropriate implementation info
+      const clientInfo = {
+        name: 'srcbook-mcp-client',
+        version: '1.0.0'
       };
       
+      // Create a new MCP client
+      const client = new Client(clientInfo, {
+        capabilities: {
+          // Define client capabilities as needed
+          resources: true,
+          tools: true,
+          prompts: true
+        }
+      });
+      
       // Create a transport based on the server type
-      let transport: any;
+      let transport;
       
       if (config.type === 'stdio') {
-        // In a real implementation, you would use the actual MCP SDK
-        // For now, we'll create a mock transport
-        transport = {
-          start: async () => {},
-          stop: async () => {}
-        };
+        // Create a stdio transport
+        transport = new StdioClientTransport({
+          command: config.command,
+          args: config.args,
+          env: config.env,
+          cwd: config.cwd
+        });
       } else {
-        // SSE transport
-        transport = {
-          start: async () => {},
-          stop: async () => {}
-        };
+        // Create an SSE transport
+        const url = new URL(config.url);
+        transport = new SSEClientTransport(url, {
+          requestInit: config.headers ? { headers: config.headers } : undefined
+        });
       }
+      
+      // Connect the client to the transport
+      await client.connect(transport);
       
       // Create the connection
       const connection: McpConnection = {
@@ -674,9 +699,39 @@ export class McpHub {
     watchPaths: string[],
     source: McpServerSource
   ): Promise<void> {
-    // In a real implementation, you would set up file watchers
-    // For now, we'll just log the watch paths
     this.provider.log(`Setting up file watchers for server ${serverName}: ${watchPaths.join(', ')}`);
+    
+    // Create an array to store the watchers for this server
+    const watchers: any[] = [];
+    
+    // Import the fs module for file watching
+    const fs = await import('fs');
+    
+    // Set up a watcher for each path
+    for (const watchPath of watchPaths) {
+      try {
+        // Create a watcher for the path
+        const watcher = fs.watch(watchPath, { recursive: true }, (eventType) => {
+          if (eventType === 'change') {
+            this.provider.log(`File changed in watch path ${watchPath} for server ${serverName}`);
+            
+            // Find the connection
+            const connection = this.findConnection(serverName, source);
+            if (connection && connection.server.status === 'connected') {
+              this.provider.log(`Server ${serverName} will be restarted on next request due to file change`);
+            }
+          }
+        });
+        
+        // Add the watcher to the array
+        watchers.push(watcher);
+      } catch (error) {
+        this.provider.log(`Failed to set up watcher for path ${watchPath}: ${error}`);
+      }
+    }
+    
+    // Store the watchers in the map
+    this.fileWatchers.set(`${serverName}:${source}`, watchers);
   }
   
   /**
