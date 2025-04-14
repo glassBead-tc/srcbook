@@ -4,7 +4,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "prebuild": "rm -rf ./dist",
+    "prebuild": "rimraf ./dist",
     "build": "tsc",
     "dev": "tsc --watch --project .",
     "lint": "eslint . --max-warnings 0",
@@ -57,5 +57,8 @@
     "sonner": "*",
     "tailwind-merge": "*",
     "use-debounce": "*"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.1"
   }
 }

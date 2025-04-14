@@ -46,3 +46,6 @@ srcbook/lib/**/*
 docs/
 
 vite.config.ts.timestamp-*.mjs
+
+# Roo Code
+.roomodes
