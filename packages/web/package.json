@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "rimraf ./dist",
-    "build": "tsc && vite build && copyfiles -u 1 ./dist/**/* ../../srcbook/public",
+    "build": "tsc && vite build && copyfiles -u 1 \"./dist/**/*\" ../../srcbook/public",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write .",
     "preview": "vite preview",
