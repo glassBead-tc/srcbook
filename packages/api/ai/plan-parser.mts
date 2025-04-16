@@ -4,6 +4,7 @@ import { type App as DBAppType } from '../db/schema.mjs';
 import { loadFile } from '../apps/disk.mjs';
 import { StreamingXMLParser, TagType } from './stream-xml-parser.mjs';
 import { ActionChunkType, DescriptionChunkType } from '@srcbook/shared';
+import { getMCPClientManager } from '../mcp/client-manager.mjs';
 
 // The ai proposes a plan that we expect to contain both files and commands
 // Here is an example of a plan:
@@ -60,6 +61,15 @@ type NpmInstallCommand = {
   description: string;
 };
 
+// MCP Tool Action type
+interface MCPToolAction {
+  type: 'tool';
+  toolName: string;
+  serverId: string;
+  parameters: string; // JSON string of parameters
+  description: string;
+}
+
 // Later we can add more commands. For now, we only support npm install
 type Command = NpmInstallCommand;
 
@@ -69,7 +79,7 @@ export interface Plan {
   id: string;
   query: string;
   description: string;
-  actions: (FileAction | Command)[];
+  actions: (FileAction | Command | MCPToolAction)[];
 }
 
 interface ParsedResult {
@@ -82,6 +92,9 @@ interface ParsedResult {
           file?: { '@_filename': string; '#text': string };
           commandType?: string;
           package?: string | string[];
+          toolName?: string;
+          serverId?: string;
+          parameters?: string;
         }[]
       | {
           '@_type': string;
@@ -89,6 +102,9 @@ interface ParsedResult {
           file?: { '@_filename': string; '#text': string };
           commandType?: string;
           package?: string | string[];
+          toolName?: string;
+          serverId?: string;
+          parameters?: string;
         };
   };
 }
@@ -151,6 +167,30 @@ export async function parsePlan(
           packages: Array.isArray(action.package) ? action.package : [action.package],
           description: action.description,
         });
+      } else if (action['@_type'] === 'tool' && action.toolName && action.serverId) {
+        // Handle MCP tool action
+        try {
+          // Validate that the tool exists
+          const clientManager = getMCPClientManager();
+          const tools = await clientManager.getTools();
+          const tool = tools.find(t => t.name === action.toolName && t.serverId === action.serverId);
+
+          if (!tool) {
+            console.error(`Tool ${action.toolName} not found on server ${action.serverId}`);
+            continue;
+          }
+
+          plan.actions.push({
+            type: 'tool',
+            toolName: action.toolName,
+            serverId: action.serverId,
+            parameters: action.parameters || '{}',
+            description: action.description,
+          });
+        } catch (error) {
+          console.error('Error handling MCP tool action:', error);
+          continue;
+        }
       }
     }
 
@@ -274,6 +314,37 @@ async function toStreamingChunk(
             packages: packageTags.map((t) => t.content),
           },
         } as ActionChunkType;
+      } else if (type === 'tool') {
+        const toolNameTag = tag.children.find((t) => t.name === 'toolName')!;
+        const serverIdTag = tag.children.find((t) => t.name === 'serverId')!;
+        const parametersTag = tag.children.find((t) => t.name === 'parameters');
+
+        // Validate that the tool exists
+        try {
+          const clientManager = getMCPClientManager();
+          const tools = await clientManager.getTools();
+          const tool = tools.find(t => t.name === toolNameTag.content && t.serverId === serverIdTag.content);
+
+          if (!tool) {
+            console.error(`Tool ${toolNameTag.content} not found on server ${serverIdTag.content}`);
+            return null;
+          }
+
+          return {
+            type: 'action',
+            planId: planId,
+            data: {
+              type: 'tool',
+              description,
+              toolName: toolNameTag.content,
+              serverId: serverIdTag.content,
+              parameters: parametersTag ? parametersTag.content : '{}',
+            },
+          } as ActionChunkType;
+        } catch (error) {
+          console.error('Error handling MCP tool action in streaming parser:', error);
+          return null;
+        }
       } else {
         return null;
       }

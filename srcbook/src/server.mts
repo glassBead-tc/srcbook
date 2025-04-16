@@ -12,7 +12,7 @@ import http from 'node:http';
 import express from 'express';
 // @ts-ignore
 import { WebSocketServer as WsWebSocketServer } from 'ws';
-import { wss, app, posthog } from '@srcbook/api';
+import { wss, app, posthog, initializeMCP } from '@srcbook/api';
 import chalk from 'chalk';
 import { pathTo, getPackageJson } from './utils.mjs';
 
@@ -41,6 +41,13 @@ console.log(chalk.dim('Creating WebSocket server...'));
 const webSocketServer = new WsWebSocketServer({ server });
 webSocketServer.on('connection', wss.onConnection);
 
+// Initialize MCP client manager
+console.log(chalk.dim('Initializing MCP client manager...'));
+initializeMCP().catch(error => {
+  console.error('Failed to initialize MCP client manager:', error);
+  console.log(chalk.yellow('MCP functionality will be limited or unavailable.'));
+});
+
 // Serve the react-app for all other routes, handled by client-side routing
 app.get('*', (_req, res) => res.sendFile(INDEX_HTML));
 
@@ -60,8 +67,25 @@ server.listen(port, () => {
 });
 
 process.on('SIGINT', async () => {
+  console.log(chalk.dim('Shutting down...'));
+
   // Ensure we gracefully shutdown posthog since it may need to flush events
+  console.log(chalk.dim('Shutting down PostHog...'));
   posthog.shutdown();
+
+  // Shutdown MCP client manager
+  try {
+    console.log(chalk.dim('Shutting down MCP client manager...'));
+    const { getMCPClientManager } = await import('@srcbook/api');
+    const mcpClientManager = getMCPClientManager();
+    await mcpClientManager.close();
+  } catch (error) {
+    console.error('Error shutting down MCP client manager:', error);
+  }
+
+  // Close the server
+  console.log(chalk.dim('Closing server...'));
   server.close();
+
   process.exit();
 });

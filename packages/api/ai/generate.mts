@@ -14,6 +14,7 @@ import { PROMPTS_DIR } from '../constants.mjs';
 import { encode, decodeCells } from '../srcmd.mjs';
 import { buildProjectXml, type FileContent } from '../ai/app-parser.mjs';
 import { logAppGeneration } from './logger.mjs';
+import { formatMCPToolsForAI } from './mcp-tools.mjs';
 
 const makeGenerateSrcbookSystemPrompt = () => {
   return readFileSync(Path.join(PROMPTS_DIR, 'srcbook-generator.txt'), 'utf-8');
@@ -33,25 +34,55 @@ const makeAppEditorSystemPrompt = () => {
   return readFileSync(Path.join(PROMPTS_DIR, 'app-editor.txt'), 'utf-8');
 };
 
-const makeAppEditorUserPrompt = (projectId: string, files: FileContent[], query: string) => {
+const makeAppEditorUserPrompt = async (projectId: string, files: FileContent[], query: string) => {
   const projectXml = buildProjectXml(files, projectId);
   const userRequestXml = `<userRequest>${query}</userRequest>`;
+
+  // Get MCP tools if available
+  let mcpToolsXml = '';
+  try {
+    const mcpTools = await formatMCPToolsForAI();
+    if (mcpTools && mcpTools !== 'No MCP tools are available.' && mcpTools !== 'Error retrieving MCP tools.') {
+      mcpToolsXml = `<mcpTools>
+${mcpTools}
+</mcpTools>`;
+    }
+  } catch (error) {
+    console.error('Error getting MCP tools for app editor:', error);
+  }
+
   return `Following below are the project XML and the user request.
 
 ${projectXml}
 
 ${userRequestXml}
+${mcpToolsXml ? '\n\n' + mcpToolsXml : ''}
   `.trim();
 };
 
-const makeAppCreateUserPrompt = (projectId: string, files: FileContent[], query: string) => {
+const makeAppCreateUserPrompt = async (projectId: string, files: FileContent[], query: string) => {
   const projectXml = buildProjectXml(files, projectId);
   const userRequestXml = `<userRequest>${query}</userRequest>`;
+
+  // Get MCP tools if available
+  let mcpToolsXml = '';
+  try {
+    const mcpTools = await formatMCPToolsForAI();
+    if (mcpTools && mcpTools !== 'No MCP tools are available.' && mcpTools !== 'Error retrieving MCP tools.') {
+      mcpToolsXml = `<mcpTools>
+${mcpTools}
+</mcpTools>`;
+    }
+  } catch (error) {
+    console.error('Error getting MCP tools for app creation:', error);
+  }
+
   return `Following below are the project XML and the user request.
 
 ${projectXml}
 
 ${userRequestXml}
+${mcpToolsXml ? '\n\n' + mcpToolsXml : ''}
   `.trim();
 };
 
@@ -252,7 +283,7 @@ export async function generateApp(
   const result = await generateText({
     model,
     system: makeAppBuilderSystemPrompt(),
-    prompt: makeAppCreateUserPrompt(projectId, files, query),
+    prompt: await makeAppCreateUserPrompt(projectId, files, query),
   });
   return result.text;
 }
@@ -267,7 +298,7 @@ export async function streamEditApp(
   const model = await getModel();
 
   const systemPrompt = makeAppEditorSystemPrompt();
-  const userPrompt = makeAppEditorUserPrompt(projectId, files, query);
+  const userPrompt = await makeAppEditorUserPrompt(projectId, files, query);
 
   let response = '';
 

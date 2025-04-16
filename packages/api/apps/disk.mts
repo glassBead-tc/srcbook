@@ -11,6 +11,7 @@ import { FileContent } from '../ai/app-parser.mjs';
 import type { Plan } from '../ai/plan-parser.mjs';
 import archiver from 'archiver';
 import { wss } from '../index.mjs';
+import { executeMCPTool } from './mcp-tools.mjs';
 
 export function pathToApp(id: string) {
   return Path.join(APPS_DIR, id);
@@ -52,6 +53,23 @@ export async function applyPlan(app: DBAppType, plan: Plan) {
           source: item.modified,
           binary: isBinary(basename),
         });
+      } else if (item.type === 'tool') {
+        // Execute MCP tool
+        try {
+          console.log(`Executing MCP tool ${item.toolName} on server ${item.serverId}`);
+          const result = await executeMCPTool(item.toolName, item.serverId, item.parameters);
+          console.log(`MCP tool execution result:`, result);
+
+          // Notify clients about the tool execution
+          wss.broadcast(`app:${app.externalId}`, 'mcp:tool-executed', {
+            toolName: item.toolName,
+            serverId: item.serverId,
+            result: result
+          });
+        } catch (error) {
+          console.error(`Error executing MCP tool ${item.toolName}:`, error);
+          // Continue with other actions even if this one fails
+        }
       }
     }
   } catch (e) {

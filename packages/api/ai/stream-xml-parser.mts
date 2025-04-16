@@ -12,6 +12,9 @@ export const xmlSchema: Record<string, NodeSchema> = {
   commandType: { isContentNode: true, hasCdata: false },
   package: { isContentNode: true, hasCdata: false },
   planDescription: { isContentNode: true, hasCdata: true },
+  toolName: { isContentNode: true, hasCdata: false },
+  serverId: { isContentNode: true, hasCdata: false },
+  parameters: { isContentNode: true, hasCdata: true },
 };
 
 export type TagType = {

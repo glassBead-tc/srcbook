@@ -49,3 +49,7 @@ vite.config.ts.timestamp-*.mjs
 
 # Roo Code
 .roomodes
+
+# MCP config
+packages/api/srcbook_mcp_config.json
+MCPClientDevGuide.md

@@ -4,3 +4,6 @@ import { SRCBOOKS_DIR } from './constants.mjs';
 import { posthog } from './posthog-client.mjs';
 
 export { app, wss, SRCBOOKS_DIR, posthog };
+
+// Export MCP functionality
+export * from './mcp/index.mjs';
