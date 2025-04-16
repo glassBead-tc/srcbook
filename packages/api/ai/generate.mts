@@ -42,7 +42,11 @@ const makeAppEditorUserPrompt = async (projectId: string, files: FileContent[], 
   let mcpToolsXml = '';
   try {
     const mcpTools = await formatMCPToolsForAI();
-    if (mcpTools && mcpTools !== 'No MCP tools are available.' && mcpTools !== 'Error retrieving MCP tools.') {
+    if (
+      mcpTools &&
+      mcpTools !== 'No MCP tools are available.' &&
+      mcpTools !== 'Error retrieving MCP tools.'
+    ) {
       mcpToolsXml = `<mcpTools>
 ${mcpTools}
 </mcpTools>`;
@@ -68,7 +72,11 @@ const makeAppCreateUserPrompt = async (projectId: string, files: FileContent[], 
   let mcpToolsXml = '';
   try {
     const mcpTools = await formatMCPToolsForAI();
-    if (mcpTools && mcpTools !== 'No MCP tools are available.' && mcpTools !== 'Error retrieving MCP tools.') {
+    if (
+      mcpTools &&
+      mcpTools !== 'No MCP tools are available.' &&
+      mcpTools !== 'Error retrieving MCP tools.'
+    ) {
       mcpToolsXml = `<mcpTools>
 ${mcpTools}
 </mcpTools>`;

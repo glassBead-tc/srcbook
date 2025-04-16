@@ -105,7 +105,9 @@ export class MCPClientManager {
       await this.discoverAllTools();
 
       this._isInitialized = true;
-      console.log(`MCP Client Manager initialized with ${this.connections.size} servers and ${this.tools.length} tools.`);
+      console.log(
+        `MCP Client Manager initialized with ${this.connections.size} servers and ${this.tools.length} tools.`,
+      );
 
       posthog.capture({
         event: 'mcp_client_manager_initialized',
@@ -167,7 +169,7 @@ export class MCPClientManager {
       // Create a new client
       const client = new Client(
         { name: 'srcbook-mcp-client', version: '1.0.0' },
-        { capabilities: { tools: {} } }
+        { capabilities: { tools: {} } },
       );
 
       // Set up environment variables for the server process
@@ -194,7 +196,7 @@ export class MCPClientManager {
       const transport = new StdioClientTransport({
         command: serverConfig.command,
         args: serverConfig.args,
-        env: envVars
+        env: envVars,
       });
 
       // Connect to the server
@@ -229,7 +231,7 @@ export class MCPClientManager {
         const toolsResult = await client.listTools();
 
         // Map the tools to our internal format
-        const serverTools = toolsResult.tools.map(tool => {
+        const serverTools = toolsResult.tools.map((tool) => {
           // Create a properly typed MCPTool object
           const mcpTool: MCPTool = {
             serverId,
@@ -237,7 +239,7 @@ export class MCPClientManager {
             description: tool.description,
             inputSchema: tool.inputSchema,
             // Handle annotations with proper typing
-            annotations: tool.annotations as MCPTool['annotations']
+            annotations: tool.annotations as MCPTool['annotations'],
           };
           return mcpTool;
         });
@@ -280,7 +282,7 @@ export class MCPClientManager {
     }
 
     // Find the tool definition
-    const tool = this.tools.find(t => t.serverId === serverId && t.name === toolName);
+    const tool = this.tools.find((t) => t.serverId === serverId && t.name === toolName);
     if (!tool) {
       throw new Error(`Tool ${toolName} not found on server ${serverId}`);
     }
@@ -289,7 +291,10 @@ export class MCPClientManager {
       // Validate the arguments against the tool's input schema
       const validatedArgs = this.validateToolArgs(tool, args);
 
-      console.log(`Calling tool ${toolName} on server ${serverId} with validated args:`, validatedArgs);
+      console.log(
+        `Calling tool ${toolName} on server ${serverId} with validated args:`,
+        validatedArgs,
+      );
 
       posthog.capture({
         event: 'mcp_tool_called',
@@ -302,14 +307,15 @@ export class MCPClientManager {
       // Safely handle the result
       if (result && typeof result === 'object' && 'isError' in result && result.isError) {
         // Safely access content if it exists
-        const errorMessage = result.content &&
+        const errorMessage =
+          result.content &&
           Array.isArray(result.content) &&
           result.content.length > 0 &&
           result.content[0] &&
           typeof result.content[0] === 'object' &&
-          'text' in result.content[0] ?
-          result.content[0].text :
-          'Unknown error';
+          'text' in result.content[0]
+            ? result.content[0].text
+            : 'Unknown error';
 
         console.error(`Tool ${toolName} returned an error:`, errorMessage);
         throw new Error(`Tool error: ${errorMessage}`);
@@ -442,9 +448,11 @@ export class MCPClientManager {
     } catch (error) {
       if (error instanceof z.ZodError) {
         // Format the validation errors
-        const formattedErrors = error.errors.map(err => {
-          return `${err.path.join('.')}: ${err.message}`;
-        }).join(', ');
+        const formattedErrors = error.errors
+          .map((err) => {
+            return `${err.path.join('.')}: ${err.message}`;
+          })
+          .join(', ');
 
         throw new Error(`Invalid arguments for tool ${tool.name}: ${formattedErrors}`);
       }
@@ -454,7 +462,7 @@ export class MCPClientManager {
   }
 
   findTool(toolName: string): MCPTool | null {
-    return this.tools.find(tool => tool.name === toolName) || null;
+    return this.tools.find((tool) => tool.name === toolName) || null;
   }
 
   /**

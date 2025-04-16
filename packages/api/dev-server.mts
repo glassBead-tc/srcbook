@@ -9,7 +9,7 @@ export { SRCBOOK_DIR } from './constants.mjs';
 
 // Initialize MCP client manager
 console.log('Initializing MCP client manager...');
-initializeMCP().catch(error => {
+initializeMCP().catch((error) => {
   console.error('Failed to initialize MCP client manager:', error);
   console.log('MCP functionality will be limited or unavailable.');
 });

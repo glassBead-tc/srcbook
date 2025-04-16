@@ -43,7 +43,7 @@ webSocketServer.on('connection', wss.onConnection);
 
 // Initialize MCP client manager
 console.log(chalk.dim('Initializing MCP client manager...'));
-initializeMCP().catch(error => {
+initializeMCP().catch((error) => {
   console.error('Failed to initialize MCP client manager:', error);
   console.log(chalk.yellow('MCP functionality will be limited or unavailable.'));
 });

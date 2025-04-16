@@ -64,7 +64,7 @@ export async function applyPlan(app: DBAppType, plan: Plan) {
           wss.broadcast(`app:${app.externalId}`, 'mcp:tool-executed', {
             toolName: item.toolName,
             serverId: item.serverId,
-            result: result
+            result: result,
           });
         } catch (error) {
           console.error(`Error executing MCP tool ${item.toolName}:`, error);

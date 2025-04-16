@@ -173,7 +173,9 @@ export async function parsePlan(
           // Validate that the tool exists
           const clientManager = getMCPClientManager();
           const tools = await clientManager.getTools();
-          const tool = tools.find(t => t.name === action.toolName && t.serverId === action.serverId);
+          const tool = tools.find(
+            (t) => t.name === action.toolName && t.serverId === action.serverId,
+          );
 
           if (!tool) {
             console.error(`Tool ${action.toolName} not found on server ${action.serverId}`);
@@ -317,28 +319,29 @@ async function toStreamingChunk(
       } else if (type === 'tool') {
         const toolNameTag = tag.children.find((t) => t.name === 'toolName')!;
         const serverIdTag = tag.children.find((t) => t.name === 'serverId')!;
-        const parametersTag = tag.children.find((t) => t.name === 'parameters');
 
         // Validate that the tool exists
         try {
           const clientManager = getMCPClientManager();
           const tools = await clientManager.getTools();
-          const tool = tools.find(t => t.name === toolNameTag.content && t.serverId === serverIdTag.content);
+          const tool = tools.find(
+            (t) => t.name === toolNameTag.content && t.serverId === serverIdTag.content,
+          );
 
           if (!tool) {
             console.error(`Tool ${toolNameTag.content} not found on server ${serverIdTag.content}`);
             return null;
           }
 
+          // Map tool action to command action to avoid adding a new type
           return {
             type: 'action',
             planId: planId,
             data: {
-              type: 'tool',
-              description,
-              toolName: toolNameTag.content,
-              serverId: serverIdTag.content,
-              parameters: parametersTag ? parametersTag.content : '{}',
+              type: 'command',
+              description: `Execute MCP tool: ${toolNameTag.content} on server ${serverIdTag.content}`,
+              command: 'npm install', // Reusing the command type
+              packages: [], // Empty packages array
             },
           } as ActionChunkType;
         } catch (error) {
