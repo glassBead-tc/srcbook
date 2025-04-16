@@ -13,7 +13,7 @@
   <a href="https://srcbook.com">Online app builder</a> ·
   <a href="https://discord.gg/shDEGBSe2d">Discord</a> ·
   <a href="https://www.youtube.com/@srcbook">Youtube</a> ·
-  <a href="https://hub.srcbook.com">Hub</a> 
+  <a href="https://hub.srcbook.com">Hub</a>
 </p>
 
 ## Srcbook
@@ -33,6 +33,7 @@ Srcbook is open-source (apache2) and runs locally on your machine. You'll need t
 - Create, edit and run web apps
 - Use AI to generate the boilerplate, modify the code, and fix things
 - Edit the app with a hot-reloading web preview
+- MCP (Model Context Protocol) integration for enhanced AI capabilities
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://i.imgur.com/lLJPZOs.png">
@@ -136,6 +137,34 @@ npm uninstall -g srcbook
 In order to improve Srcbook, we collect some behavioral analytics. We don't collect any Personal Identifiable Information (PII), our goals are simply to improve the application. The code is open source so you don't have to trust us, you can verify! You can find more information in our [privacy policy](https://github.com/srcbookdev/srcbook/blob/main/PRIVACY-POLICY.md).
 
 If you want to disable tracking, you can run Srcbook with `SRCBOOK_DISABLE_ANALYTICS=true` set in the environment.
+
+## MCP Integration
+
+Srcbook now includes support for the Model Context Protocol (MCP), enabling AI models to access external tools and data sources. This integration enhances the capabilities of AI-generated applications by allowing them to:
+
+- Access external data sources and APIs
+- Perform web searches and retrieve information
+- Execute specialized tools during app generation
+
+MCP servers can be configured in the `packages/api/srcbook_mcp_config.json` file. The MCP client automatically discovers and makes available all tools provided by configured MCP servers.
+
+### Configuring MCP Servers
+
+To add an MCP server, update the configuration file with the server details:
+
+```json
+{
+  "mcpServers": {
+    "server-id": {
+      "command": "command-to-run-server",
+      "args": ["arg1", "arg2"],
+      "env": {
+        "API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
 
 ## Contributing
 
