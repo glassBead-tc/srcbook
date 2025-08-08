@@ -7,6 +7,7 @@ import cors from 'cors';
 import {
   createSession,
   findSession,
+  findCell,
   deleteSessionByDirname,
   updateSession,
   sessionToResponse,
@@ -36,7 +37,7 @@ import {
 } from '../srcbook/index.mjs';
 import { readdir } from '../fs-utils.mjs';
 import { EXAMPLE_SRCBOOKS } from '../srcbook/examples.mjs';
-import { pathToSrcbook } from '../srcbook/path.mjs';
+import { pathToSrcbook, pathToCodeFile } from '../srcbook/path.mjs';
 import { isSrcmdPath } from '../srcmd/paths.mjs';
 import {
   loadApps,
@@ -64,6 +65,13 @@ import { AppGenerationFeedbackType } from '@srcbook/shared';
 import { createZipFromApp } from '../apps/disk.mjs';
 import { checkoutCommit, commitAllFiles, getCurrentCommitSha } from '../apps/git.mjs';
 import { streamJsonResponse } from './utils.mjs';
+import wss from './ws.mjs';
+import executions from './executions.mjs';
+import { getSecretsAssociatedWithSession } from '../config.mjs';
+import { node, tsx } from '../exec.mjs';
+import { missingUndeclaredDeps, shouldNpmInstall } from '../deps.mjs';
+import processes from '../processes.mjs';
+import type { CodeCellType } from '@srcbook/shared';
 
 const app: Application = express();
 
@@ -833,4 +841,141 @@ router.post('/apps/:id/feedback', cors(), async (req, res) => {
     console.error('Error sending feedback:', error);
     return res.status(500).json({ error: 'Failed to send feedback' });
   }
+});
+
+// Execute a code cell via REST and return an execution id
+router.options('/sessions/:id/cells/:cellId/exec', cors());
+router.post('/sessions/:id/cells/:cellId/exec', cors(), async (req, res) => {
+  const { id, cellId } = req.params;
+
+  try {
+    const session = await findSession(id);
+    const cell = findCell(session, cellId) as CodeCellType | undefined;
+
+    if (!cell || cell.type !== 'code') {
+      return res.status(404).json({ error: true, message: 'Code cell not found' });
+    }
+
+    // Parity with WS: nudge missing deps
+    try {
+      if (await shouldNpmInstall(session.dir)) {
+        wss.broadcast(`session:${session.id}`, 'deps:validate:response', {});
+      }
+      const missingDeps = await missingUndeclaredDeps(session.dir);
+      if (missingDeps.length > 0) {
+        wss.broadcast(`session:${session.id}`, 'deps:validate:response', { packages: missingDeps });
+      }
+    } catch (e) {
+      console.error(`Error validating dependencies for session ${session.id}:`, e);
+    }
+
+    const secrets = await getSecretsAssociatedWithSession(session.id);
+
+    // Update cell status and notify
+    cell.status = 'running';
+    wss.broadcast(`session:${session.id}`, 'cell:updated', { cell });
+
+    const execRec = executions.create(session.id, cell);
+
+    const onStdout = (data: Buffer) => {
+      const chunk = data.toString('utf8');
+      executions.appendOutput(execRec.id, { type: 'stdout', data: chunk });
+      wss.broadcast(`session:${session.id}`, 'cell:output', {
+        cellId: cell.id,
+        output: { type: 'stdout', data: chunk },
+      });
+    };
+
+    const onStderr = (data: Buffer) => {
+      const chunk = data.toString('utf8');
+      executions.appendOutput(execRec.id, { type: 'stderr', data: chunk });
+      wss.broadcast(`session:${session.id}`, 'cell:output', {
+        cellId: cell.id,
+        output: { type: 'stderr', data: chunk },
+      });
+    };
+
+    const onExit = async (code: number | null) => {
+      // Set latest cell status back to idle and notify
+      const latestSession = await findSession(session.id);
+      const latest = latestSession.cells.find((c) => c.id === cell.id) as CodeCellType;
+      if (latest) {
+        latest.status = 'idle';
+        wss.broadcast(`session:${session.id}`, 'cell:updated', { cell: latest });
+      }
+      executions.complete(execRec.id, code);
+    };
+
+    switch (cell.language) {
+      case 'javascript':
+        processes.add(
+          session.id,
+          cell.id,
+          node({ cwd: session.dir, env: secrets, entry: pathToCodeFile(session.dir, cell.filename), stdout: onStdout, stderr: onStderr, onExit })
+        );
+        break;
+      case 'typescript':
+        processes.add(
+          session.id,
+          cell.id,
+          tsx({ cwd: session.dir, env: secrets, entry: pathToCodeFile(session.dir, cell.filename), stdout: onStdout, stderr: onStderr, onExit })
+        );
+        break;
+    }
+
+    return res.json({ error: false, result: { execId: execRec.id } });
+  } catch (e) {
+    const error = e as unknown as Error;
+    console.error(error);
+    return res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Polling endpoint to retrieve execution status and buffered output
+router.options('/executions/:execId', cors());
+router.get('/executions/:execId', cors(), async (req, res) => {
+  const { execId } = req.params;
+  const record = executions.get(execId);
+  if (!record) return res.status(404).json({ error: true, message: 'Execution not found' });
+  return res.json({ error: false, result: record });
+});
+
+// SSE stream for live outputs
+router.options('/executions/:execId/stream', cors());
+router.get('/executions/:execId/stream', cors(), async (req, res) => {
+  const { execId } = req.params;
+  const record = executions.get(execId);
+  if (!record) return res.status(404).end();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Send initial snapshot
+  send('status', { status: record.status, startedAt: record.startedAt, completedAt: record.completedAt, exitCode: record.exitCode });
+  for (const out of record.outputs) {
+    send('output', { output: out, cellId: record.cellId, execId: record.id });
+  }
+
+  const unsubscribe = executions.subscribe(execId, (evt) => {
+    if (evt.type === 'output') {
+      send('output', { output: evt.data, cellId: record.cellId, execId: record.id });
+    } else if (evt.type === 'status') {
+      send('status', evt.data);
+      // If complete/failed, end the stream shortly after to flush
+      if (evt.data.status === 'complete' || evt.data.status === 'failed') {
+        setTimeout(() => res.end(), 10);
+      }
+    }
+  });
+
+  req.on('close', () => {
+    unsubscribe();
+  });
 });
