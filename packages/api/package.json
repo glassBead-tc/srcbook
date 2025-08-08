@@ -11,7 +11,7 @@
     "dev": "vite-node -w dev-server.mts",
     "test": "vitest",
     "prebuild": "rimraf ./dist",
-    "build": "tsc && copyfiles -u 1 ./drizzle/**/* ./dist/drizzle && copyfiles -u 1 ./srcbook/examples/**/* ./dist/srcbook/examples && copyfiles -u 1 ./prompts/**/* ./dist/prompts && copyfiles -u 1 ./apps/templates/**/* ./dist/apps/templates",
+    "build": "tsc && copyfiles -u 1 ./drizzle/* ./drizzle/**/* ./dist/drizzle && copyfiles -u 1 ./srcbook/examples/**/* ./dist/srcbook/examples && copyfiles -u 1 ./prompts/**/* ./dist/prompts && copyfiles -u 1 ./apps/templates/**/* ./dist/apps/templates",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc",
     "depcheck": "depcheck",

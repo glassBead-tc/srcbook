@@ -7,6 +7,7 @@ import cors from 'cors';
 import {
   createSession,
   findSession,
+  findCell,
   deleteSessionByDirname,
   updateSession,
   sessionToResponse,
@@ -36,7 +37,7 @@ import {
 } from '../srcbook/index.mjs';
 import { readdir } from '../fs-utils.mjs';
 import { EXAMPLE_SRCBOOKS } from '../srcbook/examples.mjs';
-import { pathToSrcbook } from '../srcbook/path.mjs';
+import { pathToSrcbook, pathToCodeFile } from '../srcbook/path.mjs';
 import { isSrcmdPath } from '../srcmd/paths.mjs';
 import {
   loadApps,
@@ -64,6 +65,15 @@ import { AppGenerationFeedbackType } from '@srcbook/shared';
 import { createZipFromApp } from '../apps/disk.mjs';
 import { checkoutCommit, commitAllFiles, getCurrentCommitSha } from '../apps/git.mjs';
 import { streamJsonResponse } from './utils.mjs';
+import wss from './ws.mjs';
+import executions from './executions.mjs';
+import { getSecretsAssociatedWithSession } from '../config.mjs';
+import { node, tsx } from '../exec.mjs';
+import { missingUndeclaredDeps, shouldNpmInstall } from '../deps.mjs';
+import processes from '../processes.mjs';
+import type { CodeCellType } from '@srcbook/shared';
+
+const ANALYTICS_DISABLED = (process.env.SRCBOOK_DISABLE_ANALYTICS || '').toLowerCase() === 'true';
 
 const app: Application = express();
 
@@ -80,8 +90,11 @@ router.post('/file', cors(), async (req, res) => {
 
   try {
     const content = await fs.readFile(file, 'utf8');
-    const cell = file.includes('.srcbook/srcbooks') && !file.includes('node_modules');
-    const filename = cell ? file.split('/').pop() || file : file;
+    const normalizedFile = Path.resolve(file);
+    const relToSrcbooks = Path.relative(SRCBOOKS_DIR, normalizedFile);
+    const isInSrcbooksDir = !relToSrcbooks.startsWith('..') && !Path.isAbsolute(relToSrcbooks);
+    const cell = isInSrcbooksDir && !normalizedFile.includes(`${Path.sep}node_modules${Path.sep}`);
+    const filename = cell ? normalizedFile.split(Path.sep).pop() || normalizedFile : normalizedFile;
 
     return res.json({
       error: false,
@@ -116,10 +129,12 @@ router.post('/srcbooks', cors(), async (req, res) => {
     });
   }
 
-  posthog.capture({
-    event: 'user created srcbook',
-    properties: { language },
-  });
+  if (!ANALYTICS_DISABLED) {
+    posthog.capture({
+      event: 'user created srcbook',
+      properties: { language },
+    });
+  }
 
   try {
     const srcbookDir = await createSrcbook(name, language);
@@ -136,7 +151,7 @@ router.delete('/srcbooks/:id', cors(), async (req, res) => {
   const { id } = req.params;
   const srcbookDir = pathToSrcbook(id);
   removeSrcbook(srcbookDir);
-  posthog.capture({ event: 'user deleted srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user deleted srcbook' });
   await deleteSessionByDirname(srcbookDir);
   return res.json({ error: false, deleted: true });
 });
@@ -152,15 +167,15 @@ router.post('/import', cors(), async (req, res) => {
 
   try {
     if (typeof path === 'string') {
-      posthog.capture({ event: 'user imported srcbook from file' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from file' });
       const srcbookDir = await importSrcbookFromSrcmdFile(path);
       return res.json({ error: false, result: { dir: srcbookDir } });
     } else if (typeof url === 'string') {
-      posthog.capture({ event: 'user imported srcbook from url' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from url' });
       const srcbookDir = await importSrcbookFromSrcmdUrl(url);
       return res.json({ error: false, result: { dir: srcbookDir } });
     } else {
-      posthog.capture({ event: 'user imported srcbook from text' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from text' });
       const srcbookDir = await importSrcbookFromSrcmdText(text);
       return res.json({ error: false, result: { dir: srcbookDir } });
     }
@@ -177,7 +192,8 @@ router.post('/generate', cors(), async (req, res) => {
   const { query } = req.body;
 
   try {
-    posthog.capture({ event: 'user generated srcbook with AI', properties: { query } });
+    if (!ANALYTICS_DISABLED)
+      posthog.capture({ event: 'user generated srcbook with AI', properties: { query } });
     const result = await generateSrcbook(query);
     const srcbookDir = await importSrcbookFromSrcmdText(result.text);
     return res.json({ error: false, result: { dir: srcbookDir } });
@@ -195,7 +211,8 @@ router.post('/sessions/:id/generate_cells', cors(), async (req, res) => {
   const { insertIdx, query } = req.body;
 
   try {
-    posthog.capture({ event: 'user generated cell with AI', properties: { query } });
+    if (!ANALYTICS_DISABLED)
+      posthog.capture({ event: 'user generated cell with AI', properties: { query } });
     const session = await findSession(req.params.id);
     const { error, errors, cells } = await generateCells(query, session, insertIdx);
     const result = error ? errors : cells;
@@ -225,7 +242,7 @@ router.options('/sessions', cors());
 router.post('/sessions', cors(), async (req, res) => {
   const { path } = req.body;
 
-  posthog.capture({ event: 'user opened srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user opened srcbook' });
   const dir = await readdir(path);
 
   if (!dir.exists) {
@@ -276,7 +293,7 @@ router.options('/sessions/:id/export-text', cors());
 router.get('/sessions/:id/export-text', cors(), async (req, res) => {
   const session = await findSession(req.params.id);
 
-  posthog.capture({ event: 'user exported srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user exported srcbook' });
 
   try {
     const text = exportSrcmdText(session);
@@ -316,10 +333,12 @@ router.post('/settings', cors(), async (req, res) => {
   try {
     const updated = await updateConfig(req.body);
 
-    posthog.capture({
-      event: 'user updated settings',
-      properties: { setting_changed: Object.keys(req.body) },
-    });
+    if (!ANALYTICS_DISABLED) {
+      posthog.capture({
+        event: 'user updated settings',
+        properties: { setting_changed: Object.keys(req.body) },
+      });
+    }
 
     return res.json({ result: updated });
   } catch (e) {
@@ -339,7 +358,7 @@ router.get('/secrets', cors(), async (_req, res) => {
 // Create a new secret
 router.post('/secrets', cors(), async (req, res) => {
   const { name, value } = req.body;
-  posthog.capture({ event: 'user created secret' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user created secret' });
   const updated = await addSecret(name, value);
   return res.json({ result: updated });
 });
@@ -439,10 +458,12 @@ router.post('/apps', cors(), async (req, res) => {
 
   const attrs = result.data;
 
-  posthog.capture({
-    event: 'user created app',
-    properties: { prompt: typeof attrs.prompt === 'string' ? attrs.prompt : 'N/A' },
-  });
+  if (!ANALYTICS_DISABLED) {
+    posthog.capture({
+      event: 'user created app',
+      properties: { prompt: typeof attrs.prompt === 'string' ? attrs.prompt : 'N/A' },
+    });
+  }
 
   try {
     if (typeof attrs.prompt === 'string') {
@@ -547,7 +568,7 @@ router.options('/apps/:id/edit', cors());
 router.post('/apps/:id/edit', cors(), async (req, res) => {
   const { id } = req.params;
   const { query, planId } = req.body;
-  posthog.capture({ event: 'user edited app with ai' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user edited app with ai' });
   try {
     const app = await loadApp(id);
 
@@ -765,7 +786,7 @@ router.post('/apps/:id/export', cors(), async (req, res) => {
   const { name } = req.body;
 
   try {
-    posthog.capture({ event: 'user exported app' });
+    if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user exported app' });
     const app = await loadApp(id);
 
     if (!app) {
@@ -808,7 +829,8 @@ router.post('/apps/:id/feedback', cors(), async (req, res) => {
   if (process.env.SRCBOOK_DISABLE_ANALYTICS === 'true') {
     return res.status(403).json({ error: 'Analytics are disabled' });
   }
-  posthog.capture({ event: 'user sent feedback', properties: { type: feedback.type } });
+  if (!ANALYTICS_DISABLED)
+    posthog.capture({ event: 'user sent feedback', properties: { type: feedback.type } });
 
   try {
     const response = await fetch('https://hub.srcbook.com/api/app_generation_feedback', {
@@ -833,4 +855,141 @@ router.post('/apps/:id/feedback', cors(), async (req, res) => {
     console.error('Error sending feedback:', error);
     return res.status(500).json({ error: 'Failed to send feedback' });
   }
+});
+
+// Execute a code cell via REST and return an execution id
+router.options('/sessions/:id/cells/:cellId/exec', cors());
+router.post('/sessions/:id/cells/:cellId/exec', cors(), async (req, res) => {
+  const { id, cellId } = req.params;
+
+  try {
+    const session = await findSession(id);
+    const cell = findCell(session, cellId) as CodeCellType | undefined;
+
+    if (!cell || cell.type !== 'code') {
+      return res.status(404).json({ error: true, message: 'Code cell not found' });
+    }
+
+    // Parity with WS: nudge missing deps
+    try {
+      if (await shouldNpmInstall(session.dir)) {
+        wss.broadcast(`session:${session.id}`, 'deps:validate:response', {});
+      }
+      const missingDeps = await missingUndeclaredDeps(session.dir);
+      if (missingDeps.length > 0) {
+        wss.broadcast(`session:${session.id}`, 'deps:validate:response', { packages: missingDeps });
+      }
+    } catch (e) {
+      console.error(`Error validating dependencies for session ${session.id}:`, e);
+    }
+
+    const secrets = await getSecretsAssociatedWithSession(session.id);
+
+    // Update cell status and notify
+    cell.status = 'running';
+    wss.broadcast(`session:${session.id}`, 'cell:updated', { cell });
+
+    const execRec = executions.create(session.id, cell);
+
+    const onStdout = (data: Buffer) => {
+      const chunk = data.toString('utf8');
+      executions.appendOutput(execRec.id, { type: 'stdout', data: chunk });
+      wss.broadcast(`session:${session.id}`, 'cell:output', {
+        cellId: cell.id,
+        output: { type: 'stdout', data: chunk },
+      });
+    };
+
+    const onStderr = (data: Buffer) => {
+      const chunk = data.toString('utf8');
+      executions.appendOutput(execRec.id, { type: 'stderr', data: chunk });
+      wss.broadcast(`session:${session.id}`, 'cell:output', {
+        cellId: cell.id,
+        output: { type: 'stderr', data: chunk },
+      });
+    };
+
+    const onExit = async (code: number | null) => {
+      // Set latest cell status back to idle and notify
+      const latestSession = await findSession(session.id);
+      const latest = latestSession.cells.find((c) => c.id === cell.id) as CodeCellType;
+      if (latest) {
+        latest.status = 'idle';
+        wss.broadcast(`session:${session.id}`, 'cell:updated', { cell: latest });
+      }
+      executions.complete(execRec.id, code);
+    };
+
+    switch (cell.language) {
+      case 'javascript':
+        processes.add(
+          session.id,
+          cell.id,
+          node({ cwd: session.dir, env: secrets, entry: pathToCodeFile(session.dir, cell.filename), stdout: onStdout, stderr: onStderr, onExit })
+        );
+        break;
+      case 'typescript':
+        processes.add(
+          session.id,
+          cell.id,
+          tsx({ cwd: session.dir, env: secrets, entry: pathToCodeFile(session.dir, cell.filename), stdout: onStdout, stderr: onStderr, onExit })
+        );
+        break;
+    }
+
+    return res.json({ error: false, result: { execId: execRec.id } });
+  } catch (e) {
+    const error = e as unknown as Error;
+    console.error(error);
+    return res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Polling endpoint to retrieve execution status and buffered output
+router.options('/executions/:execId', cors());
+router.get('/executions/:execId', cors(), async (req, res) => {
+  const { execId } = req.params;
+  const record = executions.get(execId);
+  if (!record) return res.status(404).json({ error: true, message: 'Execution not found' });
+  return res.json({ error: false, result: record });
+});
+
+// SSE stream for live outputs
+router.options('/executions/:execId/stream', cors());
+router.get('/executions/:execId/stream', cors(), async (req, res) => {
+  const { execId } = req.params;
+  const record = executions.get(execId);
+  if (!record) return res.status(404).end();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Send initial snapshot
+  send('status', { status: record.status, startedAt: record.startedAt, completedAt: record.completedAt, exitCode: record.exitCode });
+  for (const out of record.outputs) {
+    send('output', { output: out, cellId: record.cellId, execId: record.id });
+  }
+
+  const unsubscribe = executions.subscribe(execId, (evt) => {
+    if (evt.type === 'output') {
+      send('output', { output: evt.data, cellId: record.cellId, execId: record.id });
+    } else if (evt.type === 'status') {
+      send('status', evt.data);
+      // If complete/failed, end the stream shortly after to flush
+      if (evt.data.status === 'complete' || evt.data.status === 'failed') {
+        setTimeout(() => res.end(), 10);
+      }
+    }
+  });
+
+  req.on('close', () => {
+    unsubscribe();
+  });
 });

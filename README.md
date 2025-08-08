@@ -114,6 +114,7 @@ docker run -p 2150:2150 \
   srcbook pnpm start
 ```
 
+
 Make sure to set up your AI API key after starting the container. You can do this via REST (see below) or through the web interface at `http://localhost:2150`.
 
 ### REST API
@@ -152,6 +153,7 @@ Cell creation, editing and execution are performed over WebSocket channels. See 
 ### Minimal headless example (REST + WebSocket)
 
 The following shows how to run the server in headless mode inside a container, then create a session, add a cell, run it, and stream the output.
+
 
 ```bash
 # Start server headless (host)

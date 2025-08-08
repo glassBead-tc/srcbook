@@ -27,6 +27,7 @@ That said, we believe the ability to rapidly iterate on both FE and BE code is i
 
 If you are opinionated here or otherwise interested in contributing, please file an issue, open a discussion, or submit a PR. We love community involvement!
 
+
 ### How do I run Srcbook headlessly?
 
 Use the CLI flag `--headless` to start without opening a browser:
@@ -53,3 +54,19 @@ Yes. The server exposes endpoints under `/api` for sessions, import/export, sett
 - Use `/api/settings` to set provider/model
 - Store keys via `/api/secrets` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.)
 - Associate secrets to a session as needed via `/api/sessions/:id/secrets/:name`
+
+### How do I change where Srcbook stores sessions and apps?
+
+By default, Srcbook stores data under `~/.srcbook`. You can override this by setting the `SRCBOOK_HOME` environment variable. When set, Srcbook will store data under `$SRCBOOK_HOME/.srcbook`, including `srcbooks/` and `apps/`.
+
+Examples:
+
+```bash
+# Use a workspace directory
+SRCBOOK_HOME=/workspace srcbook start
+
+# With Docker
+# Mount a host directory and point SRCBOOK_HOME to it
+docker run -p 2150:2150 -e SRCBOOK_HOME=/workspace -v /host/workspace:/workspace srcbook
+```
+
