@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { Command } from 'commander';
 import { pathTo, getPackageJson, isPortAvailable } from './utils.mjs';
 import open from 'open';
+import { pathToFileURL } from 'node:url';
 
 function openInBrowser(url: string) {
   open(url).then(
@@ -82,6 +83,13 @@ export default function program() {
     });
 
   program.parse();
+}
+
+// If executed directly (e.g., node dist/src/cli.mjs ...), run the program
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  program();
 }
 
 async function doImport(specifier: string, port: string) {
