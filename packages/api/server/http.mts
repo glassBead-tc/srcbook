@@ -65,6 +65,8 @@ import { createZipFromApp } from '../apps/disk.mjs';
 import { checkoutCommit, commitAllFiles, getCurrentCommitSha } from '../apps/git.mjs';
 import { streamJsonResponse } from './utils.mjs';
 
+const ANALYTICS_DISABLED = (process.env.SRCBOOK_DISABLE_ANALYTICS || '').toLowerCase() === 'true';
+
 const app: Application = express();
 
 const router = express.Router();
@@ -116,10 +118,12 @@ router.post('/srcbooks', cors(), async (req, res) => {
     });
   }
 
-  posthog.capture({
-    event: 'user created srcbook',
-    properties: { language },
-  });
+  if (!ANALYTICS_DISABLED) {
+    posthog.capture({
+      event: 'user created srcbook',
+      properties: { language },
+    });
+  }
 
   try {
     const srcbookDir = await createSrcbook(name, language);
@@ -136,7 +140,7 @@ router.delete('/srcbooks/:id', cors(), async (req, res) => {
   const { id } = req.params;
   const srcbookDir = pathToSrcbook(id);
   removeSrcbook(srcbookDir);
-  posthog.capture({ event: 'user deleted srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user deleted srcbook' });
   await deleteSessionByDirname(srcbookDir);
   return res.json({ error: false, deleted: true });
 });
@@ -152,15 +156,15 @@ router.post('/import', cors(), async (req, res) => {
 
   try {
     if (typeof path === 'string') {
-      posthog.capture({ event: 'user imported srcbook from file' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from file' });
       const srcbookDir = await importSrcbookFromSrcmdFile(path);
       return res.json({ error: false, result: { dir: srcbookDir } });
     } else if (typeof url === 'string') {
-      posthog.capture({ event: 'user imported srcbook from url' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from url' });
       const srcbookDir = await importSrcbookFromSrcmdUrl(url);
       return res.json({ error: false, result: { dir: srcbookDir } });
     } else {
-      posthog.capture({ event: 'user imported srcbook from text' });
+      if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user imported srcbook from text' });
       const srcbookDir = await importSrcbookFromSrcmdText(text);
       return res.json({ error: false, result: { dir: srcbookDir } });
     }
@@ -177,7 +181,8 @@ router.post('/generate', cors(), async (req, res) => {
   const { query } = req.body;
 
   try {
-    posthog.capture({ event: 'user generated srcbook with AI', properties: { query } });
+    if (!ANALYTICS_DISABLED)
+      posthog.capture({ event: 'user generated srcbook with AI', properties: { query } });
     const result = await generateSrcbook(query);
     const srcbookDir = await importSrcbookFromSrcmdText(result.text);
     return res.json({ error: false, result: { dir: srcbookDir } });
@@ -195,7 +200,8 @@ router.post('/sessions/:id/generate_cells', cors(), async (req, res) => {
   const { insertIdx, query } = req.body;
 
   try {
-    posthog.capture({ event: 'user generated cell with AI', properties: { query } });
+    if (!ANALYTICS_DISABLED)
+      posthog.capture({ event: 'user generated cell with AI', properties: { query } });
     const session = await findSession(req.params.id);
     const { error, errors, cells } = await generateCells(query, session, insertIdx);
     const result = error ? errors : cells;
@@ -225,7 +231,7 @@ router.options('/sessions', cors());
 router.post('/sessions', cors(), async (req, res) => {
   const { path } = req.body;
 
-  posthog.capture({ event: 'user opened srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user opened srcbook' });
   const dir = await readdir(path);
 
   if (!dir.exists) {
@@ -276,7 +282,7 @@ router.options('/sessions/:id/export-text', cors());
 router.get('/sessions/:id/export-text', cors(), async (req, res) => {
   const session = await findSession(req.params.id);
 
-  posthog.capture({ event: 'user exported srcbook' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user exported srcbook' });
 
   try {
     const text = exportSrcmdText(session);
@@ -316,10 +322,12 @@ router.post('/settings', cors(), async (req, res) => {
   try {
     const updated = await updateConfig(req.body);
 
-    posthog.capture({
-      event: 'user updated settings',
-      properties: { setting_changed: Object.keys(req.body) },
-    });
+    if (!ANALYTICS_DISABLED) {
+      posthog.capture({
+        event: 'user updated settings',
+        properties: { setting_changed: Object.keys(req.body) },
+      });
+    }
 
     return res.json({ result: updated });
   } catch (e) {
@@ -339,7 +347,7 @@ router.get('/secrets', cors(), async (_req, res) => {
 // Create a new secret
 router.post('/secrets', cors(), async (req, res) => {
   const { name, value } = req.body;
-  posthog.capture({ event: 'user created secret' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user created secret' });
   const updated = await addSecret(name, value);
   return res.json({ result: updated });
 });
@@ -439,10 +447,12 @@ router.post('/apps', cors(), async (req, res) => {
 
   const attrs = result.data;
 
-  posthog.capture({
-    event: 'user created app',
-    properties: { prompt: typeof attrs.prompt === 'string' ? attrs.prompt : 'N/A' },
-  });
+  if (!ANALYTICS_DISABLED) {
+    posthog.capture({
+      event: 'user created app',
+      properties: { prompt: typeof attrs.prompt === 'string' ? attrs.prompt : 'N/A' },
+    });
+  }
 
   try {
     if (typeof attrs.prompt === 'string') {
@@ -547,7 +557,7 @@ router.options('/apps/:id/edit', cors());
 router.post('/apps/:id/edit', cors(), async (req, res) => {
   const { id } = req.params;
   const { query, planId } = req.body;
-  posthog.capture({ event: 'user edited app with ai' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user edited app with ai' });
   try {
     const app = await loadApp(id);
 
@@ -765,7 +775,7 @@ router.post('/apps/:id/export', cors(), async (req, res) => {
   const { name } = req.body;
 
   try {
-    posthog.capture({ event: 'user exported app' });
+    if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user exported app' });
     const app = await loadApp(id);
 
     if (!app) {
@@ -808,7 +818,8 @@ router.post('/apps/:id/feedback', cors(), async (req, res) => {
   if (process.env.SRCBOOK_DISABLE_ANALYTICS === 'true') {
     return res.status(403).json({ error: 'Analytics are disabled' });
   }
-  posthog.capture({ event: 'user sent feedback', properties: { type: feedback.type } });
+  if (!ANALYTICS_DISABLED)
+    posthog.capture({ event: 'user sent feedback', properties: { type: feedback.type } });
 
   try {
     const response = await fetch('https://hub.srcbook.com/api/app_generation_feedback', {
