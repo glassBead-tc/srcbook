@@ -27,6 +27,34 @@ That said, we believe the ability to rapidly iterate on both FE and BE code is i
 
 If you are opinionated here or otherwise interested in contributing, please file an issue, open a discussion, or submit a PR. We love community involvement!
 
+
+### How do I run Srcbook headlessly?
+
+Use the CLI flag `--headless` to start without opening a browser:
+
+```bash
+npx srcbook@latest start --headless --port 2150
+```
+
+In containers/servers, set `PORT` and optionally `SRCBOOK_HOME` to control the data directory.
+
+### Does Srcbook have a REST API?
+
+Yes. The server exposes endpoints under `/api` for sessions, import/export, settings, secrets, and more. See `README.md` for the list. Note: cell creation, updates, and execution stream output via WebSocket on `ws://<host>/websocket` using the `session:<sessionId>` channel.
+
+### What environment variables and flags are supported?
+
+- `--port` (or `PORT`): server port (default 2150)
+- `--headless`: do not open a browser
+- `SRCBOOK_HOME`: override the default data directory (`~/.srcbook`)
+- `SRCBOOK_DISABLE_ANALYTICS`: set to `true` to disable analytics
+
+### How do I configure AI providers/models and API keys?
+
+- Use `/api/settings` to set provider/model
+- Store keys via `/api/secrets` (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.)
+- Associate secrets to a session as needed via `/api/sessions/:id/secrets/:name`
+
 ### How do I change where Srcbook stores sessions and apps?
 
 By default, Srcbook stores data under `~/.srcbook`. You can override this by setting the `SRCBOOK_HOME` environment variable. When set, Srcbook will store data under `$SRCBOOK_HOME/.srcbook`, including `srcbooks/` and `apps/`.
@@ -41,3 +69,4 @@ SRCBOOK_HOME=/workspace srcbook start
 # Mount a host directory and point SRCBOOK_HOME to it
 docker run -p 2150:2150 -e SRCBOOK_HOME=/workspace -v /host/workspace:/workspace srcbook
 ```
+

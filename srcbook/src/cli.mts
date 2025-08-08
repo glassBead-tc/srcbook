@@ -54,12 +54,12 @@ export default function program() {
     .command('start')
     .description('Start the Srcbook server')
     .option('-p, --port <port>', 'Port to run the server on', '2150')
-    .option('--headless', 'Run without opening the browser and without TTY assumptions', false)
-    .option('--no-open', 'Alias for --headless')
-    .action(({ port, headless, open }) => {
-      const headlessMode = Boolean(headless) || open === false;
-      startServer(port, headlessMode, () => {
-        if (!headlessMode) {
+
+    .option('--headless', 'Run without opening a browser', false)
+    .action(({ port, headless }) => {
+      startServer(port, () => {
+        if (!headless) {
+
           openInBrowser(`http://localhost:${port}`);
         }
       });
