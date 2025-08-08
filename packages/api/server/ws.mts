@@ -62,7 +62,7 @@ import { TsServer } from '../tsserver/tsserver.mjs';
 import WebSocketServer, { MessageContextType } from './ws-client.mjs';
 import { filenameFromPath, pathToCodeFile } from '../srcbook/path.mjs';
 import { normalizeDiagnostic } from '../tsserver/utils.mjs';
-import { removeCodeCellFromDisk } from '../srcbook/index.mjs';
+import { getStorageProvider } from '../storage/index.mjs';
 import { register as registerAppChannel } from './channels/app.mjs';
 
 type SessionsContextType = MessageContextType<'sessionId'>;
@@ -589,7 +589,7 @@ async function cellDelete(payload: CellDeletePayloadType, context: SessionsConte
   const updatedSession = await updateSession(session, { cells: updatedCells });
 
   if (cell.type === 'code') {
-    removeCodeCellFromDisk(updatedSession.dir, cell.filename);
+    getStorageProvider().removeCodeCell(updatedSession.dir, cell.filename);
 
     if (updatedSession.language === 'typescript' && tsservers.has(updatedSession.id)) {
       const file = pathToCodeFile(updatedSession.dir, cell.filename);
