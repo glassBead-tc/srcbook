@@ -100,6 +100,24 @@ docker run -p 2150:2150 -v ~/.srcbook:/root/.srcbook -v ~/.npm:/root/.npm srcboo
 
 Make sure to set up your API key after starting the container. You can do this through the web interface at `http://localhost:2150`.
 
+### Storage location
+
+By default, Srcbook stores data in `~/.srcbook` under your home directory. You can override the base directory by setting the `SRCBOOK_HOME` environment variable. When set, storage paths are resolved under `$SRCBOOK_HOME/.srcbook`.
+
+Examples:
+
+```bash
+# Store data under /workspace instead of the OS home directory
+SRCBOOK_HOME=/workspace srcbook start
+
+# With pnpm dlx
+SRCBOOK_HOME=/workspace pnpm dlx srcbook@latest start
+
+# In Docker
+# Mount a workspace directory and point SRCBOOK_HOME to it
+docker run -p 2150:2150 -e SRCBOOK_HOME=/workspace -v /host/workspace:/workspace srcbook
+```
+
 ### Current Commands
 
 ```bash

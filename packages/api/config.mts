@@ -10,7 +10,7 @@ import {
   apps,
 } from './db/schema.mjs';
 import { db } from './db/index.mjs';
-import { HOME_DIR } from './constants.mjs';
+import { STORAGE_HOME_DIR as HOME_DIR } from './constants.mjs';
 
 async function init() {
   const existingConfig = await db.select().from(configs).limit(1);

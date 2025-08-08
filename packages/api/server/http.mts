@@ -80,8 +80,11 @@ router.post('/file', cors(), async (req, res) => {
 
   try {
     const content = await fs.readFile(file, 'utf8');
-    const cell = file.includes('.srcbook/srcbooks') && !file.includes('node_modules');
-    const filename = cell ? file.split('/').pop() || file : file;
+    const normalizedFile = Path.resolve(file);
+    const relToSrcbooks = Path.relative(SRCBOOKS_DIR, normalizedFile);
+    const isInSrcbooksDir = !relToSrcbooks.startsWith('..') && !Path.isAbsolute(relToSrcbooks);
+    const cell = isInSrcbooksDir && !normalizedFile.includes(`${Path.sep}node_modules${Path.sep}`);
+    const filename = cell ? normalizedFile.split(Path.sep).pop() || normalizedFile : normalizedFile;
 
     return res.json({
       error: false,
