@@ -1,4 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import Path from 'node:path';
 import { node as execNode, tsx as execTsx, npmInstall as execNpmInstall } from './exec.mjs';
 
 import type { NodeRequestType, NPMInstallRequestType } from './exec.mjs';
@@ -23,6 +25,41 @@ class NodeExecutionStrategy implements ExecutionStrategy {
   }
 }
 
+class EchoExecutionStrategy implements ExecutionStrategy {
+  runJavascript(options: NodeRequestType): ChildProcess {
+    const filename = Path.basename(options.entry);
+    const message = `EXECUTOR_ECHO:${filename}`;
+    const child = spawn('bash', ['-lc', `echo ${JSON.stringify(message)}`], {
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+    });
+
+    child.stdout.on('data', options.stdout);
+    child.stderr.on('data', options.stderr);
+    child.on('exit', (code, signal) => options.onExit(code, signal));
+
+    return child;
+  }
+
+  runTypescript(options: NodeRequestType): ChildProcess {
+    // Same behavior for TS in echo mode
+    return this.runJavascript(options);
+  }
+
+  installDeps(options: NPMInstallRequestType): ChildProcess {
+    const child = spawn('bash', ['-lc', 'echo EXECUTOR_ECHO:NPM_INSTALL'], {
+      cwd: options.cwd,
+      env: process.env,
+    });
+
+    child.stdout.on('data', options.stdout);
+    child.stderr.on('data', options.stderr);
+    child.on('exit', (code, signal) => options.onExit(code, signal));
+
+    return child;
+  }
+}
+
 let cachedStrategy: ExecutionStrategy | null = null;
 
 export function getExecutionStrategy(): ExecutionStrategy {
@@ -34,6 +71,9 @@ export function getExecutionStrategy(): ExecutionStrategy {
     case 'node':
       cachedStrategy = new NodeExecutionStrategy();
       break;
+    case 'echo':
+      cachedStrategy = new EchoExecutionStrategy();
+      break;
     default:
       console.warn(
         `Unknown SRCBOOK_EXECUTOR='${strategyName}'. Falling back to 'node' strategy.`,
@@ -42,5 +82,6 @@ export function getExecutionStrategy(): ExecutionStrategy {
       break;
   }
 
+  console.log(`Using executor: ${strategyName}`);
   return cachedStrategy;
 }
