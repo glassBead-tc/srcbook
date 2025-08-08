@@ -144,6 +144,9 @@ The server exposes a JSON REST API under `/api`.
 - Generate srcbook from prompt: `POST /api/generate` body: `{ "query": "..." }`
 - AI healthcheck: `GET /api/ai/healthcheck`
 
+Experimental/planned endpoints:
+- `POST /api/sessions/:id/cells/:cellId/exec` (execute a cell via REST; use WebSocket `cell:exec` today)
+
 Cell creation, editing and execution are performed over WebSocket channels. See the example below.
 
 ### Minimal headless example (REST + WebSocket)
@@ -208,6 +211,7 @@ node run.js "$SESSION_ID"
 
 - Server port: `--port` flag or `PORT` env var
 - Data directory: `SRCBOOK_HOME` (defaults to `~/.srcbook`)
+- Execution strategy: `SRCBOOK_EXECUTOR` (experimental; values: `auto` | `node` | `tsx`; default `auto`)
 - AI provider/model and keys are persisted via `/api/settings` and `/api/secrets` endpoints
 
 ### Analytics and tracking
