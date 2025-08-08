@@ -83,6 +83,17 @@ pnpm dlx srcbook@latest start
 > You can instead use a global install with `<pkg manager> i -g srcbook`
 > and then directly call srcbook with `srcbook start`
 
+### Headless mode
+
+Use `--headless` to run without opening a browser, suitable for servers/containers.
+
+```bash
+npx srcbook@latest start --headless --port 2150
+```
+
+- PORT: `--port` flag or `PORT` env var (default 2150)
+- Data dir: `SRCBOOK_HOME` to override `~/.srcbook`
+
 ### Using Docker
 
 You can also run Srcbook using Docker:
@@ -91,34 +102,121 @@ You can also run Srcbook using Docker:
 # Build the Docker image
 docker build -t srcbook .
 
-# Run the container
-# The -p flag maps port 2150 from the container to your host machine
-# First -v flag mounts your local .srcbook directory to persist data
-# Second -v flag shares your npm cache for better performance
-docker run -p 2150:2150 -v ~/.srcbook:/root/.srcbook -v ~/.npm:/root/.npm srcbook
+# Run the container (headless)
+# -p maps port 2150, -v mounts your data dir, and npm cache for performance
+docker run -p 2150:2150 \
+  -e NODE_ENV=production \
+  -e PORT=2150 \
+  -e SRCBOOK_HOME=/root/.srcbook \
+  -e SRCBOOK_DISABLE_ANALYTICS=true \
+  -v ~/.srcbook:/root/.srcbook \
+  -v ~/.npm:/root/.npm \
+  srcbook pnpm start
 ```
 
-Make sure to set up your API key after starting the container. You can do this through the web interface at `http://localhost:2150`.
+Make sure to set up your AI API key after starting the container. You can do this via REST (see below) or through the web interface at `http://localhost:2150`.
 
-### Current Commands
+### REST API
+
+The server exposes a JSON REST API under `/api`.
+
+- Create/open a session for a srcbook directory:
+  - `POST /api/sessions` body: `{ "path": "/path/to/.srcbook/srcbooks/<id>" }`
+- List sessions: `GET /api/sessions`
+- Get a session: `GET /api/sessions/:id`
+- Export session as inline .src.md: `GET /api/sessions/:id/export-text`
+- Import a srcbook:
+  - From local .src.md: `POST /api/import` body: `{ "path": "/abs/path/file.src.md" }`
+  - From raw text: `POST /api/import` body: `{ "text": "...srcmd..." }`
+  - From URL: `POST /api/import` body: `{ "url": "https://.../file.src.md" }`
+- Generate cells with AI: `POST /api/sessions/:id/generate_cells` body: `{ "insertIdx": 1, "query": "Add a hello world cell" }`
+- Settings:
+  - Get: `GET /api/settings`
+  - Update: `POST /api/settings` (partial Config object)
+- Secrets:
+  - List: `GET /api/secrets`
+  - Create/update: `POST /api/secrets` body: `{ "name": "OPENAI_API_KEY", "value": "sk-..." }`
+  - Rename/update: `POST /api/secrets/:name` body: `{ "name": "NEW_NAME", "value": "..." }`
+  - Delete: `DELETE /api/secrets/:name`
+  - Associate with session: `PUT /api/sessions/:id/secrets/:name`
+  - Disassociate from session: `DELETE /api/sessions/:id/secrets/:name`
+- Examples: `GET /api/examples`
+- Generate srcbook from prompt: `POST /api/generate` body: `{ "query": "..." }`
+- AI healthcheck: `GET /api/ai/healthcheck`
+
+Cell creation, editing and execution are performed over WebSocket channels. See the example below.
+
+### Minimal headless example (REST + WebSocket)
+
+The following shows how to run the server in headless mode inside a container, then create a session, add a cell, run it, and stream the output.
 
 ```bash
-$ srcbook -h
-Usage: srcbook [options] [command]
+# Start server headless (host)
+docker run -d --name srcbook --rm \
+  -p 2150:2150 \
+  -e NODE_ENV=production -e PORT=2150 -e SRCBOOK_DISABLE_ANALYTICS=true \
+  -v ~/.srcbook:/root/.srcbook -v ~/.npm:/root/.npm \
+  srcbook pnpm start
 
-Srcbook is a interactive programming environment for TypeScript
+# Create a srcbook from text via import
+curl -s localhost:2150/api/import -H 'Content-Type: application/json' \
+  -d '{"text":"# Title\n\n```ts\nconsole.log(\"hello\")\n```"}'
+# => { "error": false, "result": { "dir": "/root/.srcbook/srcbooks/<id>" } }
 
-Options:
-  -V, --version                 output the version number
-  -h, --help                    display help for command
+# Open a session
+SESSION_ID=$(curl -s localhost:2150/api/sessions -H 'Content-Type: application/json' \
+  -d '{"path":"/root/.srcbook/srcbooks/<id>"}' | jq -r '.result.id')
 
-Commands:
-  start [options]               Start the Srcbook server
-  import [options] <specifier>  Import a Notebook
-  help [command]                display help for command
+# Use WebSocket to add and run a cell
+# Node example script (save as run.js)
+cat > run.js <<'JS'
+import WebSocket from 'ws';
+
+const sessionId = process.argv[2];
+const ws = new WebSocket('ws://localhost:2150/websocket');
+
+function send(topic, event, payload) {
+  ws.send(JSON.stringify({ topic, event, payload }));
+}
+
+ws.on('open', () => {
+  // Subscribe to session channel
+  send(`session:${sessionId}`, 'subscribe', { id: 'cli' });
+  // Create a new TypeScript code cell at index 1
+  send(`session:${sessionId}`, 'cell:create', {
+    index: 1,
+    cell: { type: 'code', language: 'typescript', filename: 'hello.ts', source: 'console.log("hi")' }
+  });
+});
+
+ws.on('message', (data) => {
+  const msg = JSON.parse(data.toString());
+  if (msg.event === 'cell:updated' && msg.payload.cell?.filename === 'hello.ts') {
+    // Run the cell after creation
+    send(`session:${sessionId}`, 'cell:exec', { cellId: msg.payload.cell.id });
+  }
+  if (msg.event === 'cell:output') {
+    process.stdout.write(msg.payload.output.data);
+  }
+});
+JS
+
+node run.js "$SESSION_ID"
 ```
 
-### Uninstalling
+### Configuration
+
+- Server port: `--port` flag or `PORT` env var
+- Data directory: `SRCBOOK_HOME` (defaults to `~/.srcbook`)
+- AI provider/model and keys are persisted via `/api/settings` and `/api/secrets` endpoints
+
+### Analytics and tracking
+
+In order to improve Srcbook, we collect some behavioral analytics. We don't collect any Personal Identifiable Information (PII), our goals are simply to improve the application. The code is open source so you don't have to trust us, you can verify! You can find more information in our [privacy policy](https://github.com/srcbookdev/srcbook/blob/main/PRIVACY-POLICY.md).
+
+If you want to disable tracking, you can run Srcbook with `SRCBOOK_DISABLE_ANALYTICS=true` set in the environment.
+
+## Uninstalling
 
 You can remove srcbook by first removing the package, and then cleaning it's local directory on disk:
 
@@ -130,12 +228,6 @@ npm uninstall -g srcbook
 ```
 
 > if you used another pm you will need to use it's specific uninstall command
-
-## Analytics and tracking
-
-In order to improve Srcbook, we collect some behavioral analytics. We don't collect any Personal Identifiable Information (PII), our goals are simply to improve the application. The code is open source so you don't have to trust us, you can verify! You can find more information in our [privacy policy](https://github.com/srcbookdev/srcbook/blob/main/PRIVACY-POLICY.md).
-
-If you want to disable tracking, you can run Srcbook with `SRCBOOK_DISABLE_ANALYTICS=true` set in the environment.
 
 ## Contributing
 

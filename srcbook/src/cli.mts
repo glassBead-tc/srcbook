@@ -52,9 +52,12 @@ export default function program() {
     .command('start')
     .description('Start the Srcbook server')
     .option('-p, --port <port>', 'Port to run the server on', '2150')
-    .action(({ port }) => {
+    .option('--headless', 'Run without opening a browser', false)
+    .action(({ port, headless }) => {
       startServer(port, () => {
-        openInBrowser(`http://localhost:${port}`);
+        if (!headless) {
+          openInBrowser(`http://localhost:${port}`);
+        }
       });
     });
 

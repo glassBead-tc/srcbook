@@ -9,7 +9,11 @@ const _filename = fileURLToPath(import.meta.url);
 const _dirname = path.dirname(_filename);
 
 export const HOME_DIR = os.homedir();
-export const SRCBOOK_DIR = path.join(HOME_DIR, '.srcbook');
+// Allow overriding the srcbook data directory via SRCBOOK_HOME (falls back to ~/.srcbook)
+const SRCBOOK_HOME = process.env.SRCBOOK_HOME && process.env.SRCBOOK_HOME.trim() !== ''
+  ? process.env.SRCBOOK_HOME
+  : path.join(HOME_DIR, '.srcbook');
+export const SRCBOOK_DIR = SRCBOOK_HOME;
 export const SRCBOOKS_DIR = path.join(SRCBOOK_DIR, 'srcbooks');
 export const APPS_DIR = path.join(SRCBOOK_DIR, 'apps');
 export const DIST_DIR = _dirname;
