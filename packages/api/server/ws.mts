@@ -15,7 +15,7 @@ import {
 } from '../session.mjs';
 import { getSecretsAssociatedWithSession } from '../config.mjs';
 import type { SessionType } from '../types.mjs';
-import { node, npmInstall, tsx } from '../exec.mjs';
+import { getExecutionStrategy } from '../executor.mjs';
 import { shouldNpmInstall, missingUndeclaredDeps } from '../deps.mjs';
 import processes from '../processes.mjs';
 import type {
@@ -155,10 +155,11 @@ type ExecRequestType = {
 };
 
 async function jsExec({ session, cell, secrets }: ExecRequestType) {
+  const executor = getExecutionStrategy();
   addRunningProcess(
     session,
     cell,
-    node({
+    executor.runJavascript({
       cwd: session.dir,
       env: secrets,
       entry: pathToCodeFile(session.dir, cell.filename),
@@ -189,10 +190,11 @@ async function jsExec({ session, cell, secrets }: ExecRequestType) {
 }
 
 async function tsxExec({ session, cell, secrets }: ExecRequestType) {
+  const executor = getExecutionStrategy();
   addRunningProcess(
     session,
     cell,
-    tsx({
+    executor.runTypescript({
       cwd: session.dir,
       env: secrets,
       entry: pathToCodeFile(session.dir, cell.filename),
@@ -244,10 +246,11 @@ async function depsInstall(payload: DepsInstallPayloadType, context: SessionsCon
     },
   });
 
+  const executor = getExecutionStrategy();
   addRunningProcess(
     session,
     cell,
-    npmInstall({
+    executor.installDeps({
       cwd: session.dir,
       packages: payload.packages,
       stdout(data) {

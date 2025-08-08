@@ -21,6 +21,7 @@ export type NodeRequestType = BaseExecRequestType & {
 export type NPMInstallRequestType = BaseExecRequestType & {
   packages?: Array<string>;
   args?: Array<string>;
+  env?: NodeJS.ProcessEnv;
 };
 
 type NpxRequestType = BaseExecRequestType & {
@@ -156,7 +157,7 @@ export function npmInstall(options: NPMInstallRequestType) {
     stdout,
     stderr,
     onExit,
-    env: process.env,
+    env: { ...process.env, ...(options.env || {}) },
   });
 }
 
