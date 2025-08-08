@@ -65,6 +65,8 @@ import { normalizeDiagnostic } from '../tsserver/utils.mjs';
 import { getStorageProvider } from '../storage/index.mjs';
 import { register as registerAppChannel } from './channels/app.mjs';
 
+const ANALYTICS_DISABLED = (process.env.SRCBOOK_DISABLE_ANALYTICS || '').toLowerCase() === 'true';
+
 type SessionsContextType = MessageContextType<'sessionId'>;
 
 const wss = new WebSocketServer();
@@ -120,7 +122,7 @@ async function cellExec(payload: CellExecPayloadType, context: SessionsContextTy
   }
 
   // Consider removing sessionId and cellId if cardinality increases costs too much
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user ran a cell',
     properties: {
       language: cell.language,
@@ -234,7 +236,7 @@ async function depsInstall(payload: DepsInstallPayloadType, context: SessionsCon
   cell.status = 'running';
   wss.broadcast(`session:${session.id}`, 'cell:updated', { cell });
 
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user installed dependencies',
     properties: {
       sessionId: session.id,
@@ -310,7 +312,7 @@ async function cellStop(payload: CellStopPayloadType, context: SessionsContextTy
     return;
   }
 
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user stopped cell execution',
     properties: {
       sessionId: session.id,
@@ -394,7 +396,7 @@ async function cellGenerate(payload: AiGenerateCellPayloadType, context: Session
   const session = await findSession(context.params.sessionId);
   const cell = session.cells.find((cell) => cell.id === payload.cellId) as CodeCellType;
 
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user edited a cell with AI',
     properties: {
       language: cell.language,
@@ -508,7 +510,7 @@ async function cellRename(payload: CellRenamePayloadType, context: SessionsConte
     );
   }
 
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user renamed cell',
     properties: {
       sessionId: session.id,
@@ -575,7 +577,7 @@ async function cellDelete(payload: CellDeletePayloadType, context: SessionsConte
     );
   }
 
-  posthog.capture({
+  if (!ANALYTICS_DISABLED) posthog.capture({
     event: 'user deleted cell',
     properties: { cellType: cell.type },
   });
@@ -711,7 +713,7 @@ async function tsconfigUpdate(payload: TsConfigUpdatePayloadType, context: Sessi
     throw new Error(`No session exists for session '${context.params.sessionId}'`);
   }
 
-  posthog.capture({ event: 'user updated tsconfig' });
+  if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user updated tsconfig' });
 
   const updatedSession = await updateSession(session, { 'tsconfig.json': payload.source });
 

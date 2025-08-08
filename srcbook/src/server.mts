@@ -16,6 +16,8 @@ import { wss, app, posthog } from '@srcbook/api';
 import chalk from 'chalk';
 import { pathTo, getPackageJson } from './utils.mjs';
 
+const ANALYTICS_DISABLED = (process.env.SRCBOOK_DISABLE_ANALYTICS || '').toLowerCase() === 'true';
+
 function clearScreen() {
   const repeatCount = process.stdout.rows - 2;
   const blank = repeatCount > 0 ? '\n'.repeat(repeatCount) : '';
@@ -51,7 +53,7 @@ console.log(chalk.green('Initialization complete'));
 const port = Number(process.env.PORT ?? 2150);
 const url = `http://localhost:${port}`;
 
-posthog.capture({ event: 'user started Srcbook application' });
+if (!ANALYTICS_DISABLED) posthog.capture({ event: 'user started Srcbook application' });
 
 const { name, version } = getPackageJson();
 
