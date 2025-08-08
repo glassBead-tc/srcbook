@@ -49,12 +49,12 @@ class EchoExecutionStrategy implements ExecutionStrategy {
   installDeps(options: NPMInstallRequestType): ChildProcess {
     const child = spawn('bash', ['-lc', 'echo EXECUTOR_ECHO:NPM_INSTALL'], {
       cwd: options.cwd,
-      env: process.env,
+      env: { ...process.env, ...(options.env || {}) },
     });
 
     child.stdout.on('data', options.stdout);
     child.stderr.on('data', options.stderr);
-    child.on('exit', (code, signal) => options.onExit(code, signal));
+    child.on('exit', (code) => options.onExit(code));
 
     return child;
   }
