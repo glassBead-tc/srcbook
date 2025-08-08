@@ -10,7 +10,7 @@ function openInBrowser(url: string) {
   );
 }
 
-function startServer(port: string, callback: () => void) {
+function startServer(port: string, headless: boolean, callback: () => void) {
   const server = spawn('node', [pathTo('dist', 'src', 'server.mjs')], {
     // Inherit stdio configurations from CLI (parent) process and allow IPC
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
@@ -18,6 +18,7 @@ function startServer(port: string, callback: () => void) {
       ...process.env,
       NODE_ENV: 'production',
       PORT: port,
+      HEADLESS: headless ? '1' : '0',
     },
   });
 
@@ -52,9 +53,14 @@ export default function program() {
     .command('start')
     .description('Start the Srcbook server')
     .option('-p, --port <port>', 'Port to run the server on', '2150')
-    .action(({ port }) => {
-      startServer(port, () => {
-        openInBrowser(`http://localhost:${port}`);
+    .option('--headless', 'Run without opening the browser and without TTY assumptions', false)
+    .option('--no-open', 'Alias for --headless')
+    .action(({ port, headless, open }) => {
+      const headlessMode = Boolean(headless) || open === false;
+      startServer(port, headlessMode, () => {
+        if (!headlessMode) {
+          openInBrowser(`http://localhost:${port}`);
+        }
       });
     });
 
@@ -70,7 +76,7 @@ export default function program() {
         return doImport(specifier, port);
       }
 
-      startServer(port, () => {
+      startServer(port, false, () => {
         doImport(specifier, port);
       });
     });

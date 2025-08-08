@@ -24,7 +24,9 @@ function clearScreen() {
   readline.clearScreenDown(process.stdout);
 }
 
-clearScreen();
+if (process.stdout.isTTY && process.env.HEADLESS !== '1') {
+  clearScreen();
+}
 
 console.log(chalk.bgGreen.black('  Srcbook  '));
 
