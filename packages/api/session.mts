@@ -17,20 +17,14 @@ import {
   languageFromFilename,
   extensionsForLanguage,
 } from '@srcbook/shared';
-import { encode, decodeDir } from './srcmd.mjs';
-import { SRCBOOKS_DIR } from './constants.mjs';
+import { encode } from './srcmd.mjs';
 import type { SessionType } from './types.mjs';
-import {
-  writeToDisk,
-  writeCellToDisk,
-  writeReadmeToDisk,
-  moveCodeCellOnDisk,
-} from './srcbook/index.mjs';
 import { fileExists } from './fs-utils.mjs';
 import { validFilename } from '@srcbook/shared';
 import { pathToCodeFile } from './srcbook/path.mjs';
 import { exec } from 'node:child_process';
 import { npmInstall } from './exec.mjs';
+import { getStorageProvider } from './storage/index.mjs';
 
 const sessions: Record<string, SessionType> = {};
 
@@ -47,13 +41,9 @@ export async function createSession(srcbookDir: string) {
     return updatedSession;
   }
 
-  const result = await decodeDir(srcbookDir);
-  if (result.error) {
-    console.error(result.errors);
-    throw new Error(`Cannot create session from invalid srcbook directory at ${srcbookDir}`);
-  }
-
-  const srcbook = result.srcbook;
+  const storage = getStorageProvider();
+  const result = await storage.readSrcbook(srcbookDir);
+  const srcbook = result;
 
   const session: SessionType = {
     id: Path.basename(srcbookDir),
@@ -95,9 +85,9 @@ export async function addCell(
 
   switch (cell.type) {
     case 'markdown':
-      return writeReadmeToDisk(session.dir, session.language, session.cells);
+      return getStorageProvider().writeReadme(session.dir, session.language, session.cells);
     case 'code':
-      return writeCellToDisk(session.dir, session.language, session.cells, cell);
+      return getStorageProvider().writeCell(session.dir, session.language, session.cells, cell);
   }
 }
 
@@ -110,7 +100,7 @@ export async function updateSession(
   const updatedSession = { ...session, ...updates };
   sessions[id] = updatedSession;
   if (flush) {
-    await writeToDisk(updatedSession);
+    await getStorageProvider().writeAll(updatedSession);
   }
   return updatedSession;
 }
@@ -164,7 +154,7 @@ function updateTitleCell(session: SessionType, cell: TitleCellType, updates: any
   const attrs = TitleCellUpdateAttrsSchema.parse(updates);
   return updateCellWithRollback(session, cell, attrs, async (session) => {
     try {
-      await writeReadmeToDisk(session.dir, session.language, session.cells);
+      await getStorageProvider().writeReadme(session.dir, session.language, session.cells);
     } catch (e) {
       console.error(e);
       return [{ message: 'An error occurred persisting files to disk' }];
@@ -176,7 +166,7 @@ function updateMarkdownCell(session: SessionType, cell: MarkdownCellType, update
   const attrs = MarkdownCellUpdateAttrsSchema.parse(updates);
   return updateCellWithRollback(session, cell, attrs, async (session) => {
     try {
-      await writeReadmeToDisk(session.dir, session.language, session.cells);
+      await getStorageProvider().writeReadme(session.dir, session.language, session.cells);
     } catch (e) {
       console.error(e);
       return [{ message: 'An error occurred persisting files to disk' }];
@@ -188,7 +178,7 @@ function updatePackageJsonCell(session: SessionType, cell: PackageJsonCellType, 
   const attrs = PackageJsonCellUpdateAttrsSchema.parse(updates);
   return updateCellWithRollback(session, cell, attrs, async (session, updatedCell) => {
     try {
-      await writeCellToDisk(
+      await getStorageProvider().writeCell(
         session.dir,
         session.language,
         session.cells,
@@ -209,7 +199,7 @@ async function updateCodeCell(
   const attrs = CodeCellUpdateAttrsSchema.parse(updates);
   return updateCellWithRollback(session, cell, { ...attrs }, async (session, updatedCell) => {
     try {
-      await writeCellToDisk(
+      await getStorageProvider().writeCell(
         session.dir,
         session.language,
         session.cells,
@@ -265,7 +255,7 @@ export async function updateCodeCellFilename(
 
   return updateCellWithRollback(session, cell, { filename }, async (session, updatedCell) => {
     try {
-      await moveCodeCellOnDisk(
+      await getStorageProvider().moveCodeCell(
         session.dir,
         session.language,
         session.cells,
@@ -371,7 +361,7 @@ export function sessionToResponse(session: SessionType) {
 }
 
 export async function readPackageJsonContentsFromDisk(session: SessionType) {
-  return fs.readFile(Path.join(session.dir, 'package.json'), { encoding: 'utf8' });
+  return getStorageProvider().readPackageJsonContents(session.dir);
 }
 
 export function findCell(session: SessionType, id: string) {
@@ -393,22 +383,16 @@ export function removeCell(session: SessionType, id: string) {
 }
 
 async function load() {
-  const srcbookDirs = await fs.readdir(SRCBOOKS_DIR, { withFileTypes: true });
-  const loadedSessions = srcbookDirs
-    .filter((entry) => entry.isDirectory())
-    .map(async (entry) => {
-      // .path -> .parentPath from node21 onwards.
-      const parentPath = entry.parentPath || entry.path;
-      try {
-        const session = await createSession(Path.join(parentPath, entry.name));
-        sessions[session.id] = session;
-        return session;
-      } catch (e) {
-        console.error(
-          `Error loading session from ${entry.name}: ${(e as Error).message}. Skipping...`,
-        );
-      }
-    });
+  const dirs = await getStorageProvider().listSessions();
+  const loadedSessions = dirs.map(async (dir) => {
+    try {
+      const session = await createSession(dir);
+      sessions[session.id] = session;
+      return session;
+    } catch (e) {
+      console.error(`Error loading session from ${dir}: ${(e as Error).message}. Skipping...`);
+    }
+  });
 
   await Promise.all(loadedSessions);
 }
