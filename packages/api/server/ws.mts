@@ -63,7 +63,7 @@ import WebSocketServer, { MessageContextType } from './ws-client.mjs';
 import { filenameFromPath, pathToCodeFile } from '../srcbook/path.mjs';
 import { normalizeDiagnostic } from '../tsserver/utils.mjs';
 import { getStorageProvider } from '../storage/index.mjs';
-import { register as registerAppChannel } from './channels/app.mjs';
+
 
 const ANALYTICS_DISABLED = (process.env.SRCBOOK_DISABLE_ANALYTICS || '').toLowerCase() === 'true';
 
@@ -896,6 +896,6 @@ wss
     getCompletions,
   );
 
-registerAppChannel(wss);
+
 
 export default wss;
