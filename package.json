@@ -1,34 +1,10 @@
 {
   "name": "srcbook-monorepo",
   "private": true,
-  "version": "0.0.1",
-  "type": "module",
+  "packageManager": "pnpm@9.7.0",
   "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "test": "turbo test",
-    "lint": "turbo lint",
-    "check-format": "prettier --check .",
-    "format": "prettier --write .",
-    "generate": "pnpm --filter api generate",
-    "migrate": "pnpm --filter api migrate",
-    "start": "turbo start",
-    "ci:publish": "pnpm publish -r",
-    "ci:version": "pnpm changeset version"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.27.8",
-    "@srcbook/configs": "workspace:^",
-    "@types/node": "^20.14.2",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.3",
-    "typescript": "5.6.2"
-  },
-  "dependencies": {
-    "turbo": "^2.1.1"
-  },
-  "packageManager": "pnpm@9.12.1",
-  "engines": {
-    "node": ">=18"
+    "build": "pnpm -r build",
+    "dev:runner": "pnpm --filter @srcbook/runner dev",
+    "start:mcp": "pnpm --filter @srcbook/mcp-gcp-sweeper start"
   }
 }
