@@ -1,8 +1,8 @@
 import { promisify } from "node:util";
-import { exec as execCb } from "node:child_process";
+import { execFile as execFileCb } from "node:child_process";
 import { Storage } from "@google-cloud/storage";
 
-const exec = promisify(execCb);
+const execFile = promisify(execFileCb);
 
 // Local helper: compute total points from a spec grid
 // We duplicate logic to avoid cross-package imports
@@ -59,8 +59,10 @@ export async function submitSweep(args: SubmitArgs) {
     `SPEC_URI=${specUri}`
   ];
 
-  const cmd = [
-    "gcloud",
+  // Use a custom delimiter for env vars to avoid issues with commas in values
+  const envArg = `--set-env-vars=^|^${envPairs.join("|")}`;
+
+  const argsArr = [
     "run",
     "jobs",
     "execute",
@@ -72,11 +74,11 @@ export async function submitSweep(args: SubmitArgs) {
     `--tasks=${taskCount}`,
     `--parallelism=${par}`,
     `--task-timeout=${timeoutSeconds}s`,
-    `--update-env-vars=${envPairs.join(",")}`,
+    envArg,
     "--format=json"
-  ].join(" ");
+  ];
 
-  const { stdout, stderr } = await exec(cmd);
+  const { stdout, stderr } = await execFile("gcloud", argsArr);
   if (stderr && stderr.trim().length > 0) {
     // gcloud often prints warnings to stderr; do not fail on them
     // Console noise is acceptable
@@ -110,8 +112,7 @@ export async function submitSweep(args: SubmitArgs) {
 
 export async function getStatus({ projectId, region, execution }: { projectId: string; region: string; execution: string }) {
   const execName = shortExecutionName(execution);
-  const cmd = [
-    "gcloud",
+  const argsArr = [
     "run",
     "jobs",
     "executions",
@@ -122,16 +123,15 @@ export async function getStatus({ projectId, region, execution }: { projectId: s
     "--project",
     projectId,
     "--format=json"
-  ].join(" ");
-  const { stdout } = await exec(cmd);
+  ];
+  const { stdout } = await execFile("gcloud", argsArr);
   const json = JSON.parse(stdout);
   return json;
 }
 
 export async function cancelExec({ projectId, region, execution }: { projectId: string; region: string; execution: string }) {
   const execName = shortExecutionName(execution);
-  const cmd = [
-    "gcloud",
+  const argsArr = [
     "run",
     "jobs",
     "executions",
@@ -142,8 +142,8 @@ export async function cancelExec({ projectId, region, execution }: { projectId: 
     "--project",
     projectId,
     "--format=json"
-  ].join(" ");
-  const { stdout } = await exec(cmd);
+  ];
+  const { stdout } = await execFile("gcloud", argsArr);
   const json = JSON.parse(stdout);
   return json;
 }
