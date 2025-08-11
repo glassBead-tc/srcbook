@@ -1,4 +1,4 @@
-import z from 'zod';
+import { z } from 'zod';
 
 export const TitleCellSchema = z.object({
   id: z.string(),
@@ -17,16 +17,16 @@ export const PackageJsonCellSchema = z.object({
   type: z.literal('package.json'),
   source: z.string(),
   filename: z.literal('package.json'),
-  status: z.enum(['idle', 'running', 'failed']),
+  status: z.union([z.literal('idle'), z.literal('running'), z.literal('failed')]),
 });
 
 export const CodeCellSchema = z.object({
   id: z.string(),
   type: z.literal('code'),
-  source: z.string(),
-  language: z.enum(['javascript', 'typescript']),
+  language: z.union([z.literal('javascript'), z.literal('typescript')]),
   filename: z.string(),
-  status: z.enum(['idle', 'running']),
+  source: z.string(),
+  status: z.union([z.literal('idle'), z.literal('running'), z.literal('failed')]),
 });
 
 // Placeholder cells are used when instructing AI where to insert generated cell(s).
@@ -52,11 +52,9 @@ export const CellWithPlaceholderSchema = z.union([
 ]);
 
 // Used to parse metadata from a srcbook header in .src.md.
-//
 // i.e. <!-- srcbook:{"language": "javascript"} -->
-//
 export const SrcbookMetadataSchema = z.object({
-  language: z.enum(['javascript', 'typescript']),
+  language: z.union([z.literal('javascript'), z.literal('typescript')]),
   'tsconfig.json': z.optional(z.string()),
 });
 

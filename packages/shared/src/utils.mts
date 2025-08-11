@@ -1,6 +1,6 @@
 import { base32hexnopad } from '@scure/base';
 import type { CodeLanguageType } from './types/cells.mjs';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 
 export function isBrowser(): boolean {
   return typeof window !== 'undefined';

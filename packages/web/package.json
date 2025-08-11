@@ -28,17 +28,17 @@
     "@uiw/react-codemirror": "^4.23.2",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.1",
-    "diff": "^7.0.0",
+
     "lucide-react": "^0.439.0",
     "marked": "catalog:",
-    "marked-react": "^2.0.0",
+
     "posthog-js": "^1.174.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.2.3",
     "react-hotkeys-hook": "^4.5.1",
     "react-router-dom": "^6.26.2",
-    "react-textarea-autosize": "^8.5.3",
+
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",

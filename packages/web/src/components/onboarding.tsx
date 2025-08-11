@@ -6,7 +6,7 @@ const OnboardingModal: React.FunctionComponent = () => {
   return (
     <div className="flex flex-col gap-6">
       <h2 className="text-3xl font-medium">Welcome to Srcbook!</h2>
-      <p>Srcbook is an AI-powered TypeScript app builder and interactive playground.</p>
+      <p>Srcbook is an AI-powered TypeScript notebook and interactive playground.</p>
 
       <div className="flex flex-col gap-3">
         <h4 className="font-medium">With Srcbook you can:</h4>
@@ -21,7 +21,7 @@ const OnboardingModal: React.FunctionComponent = () => {
             <div className="flex items-center mb-6">
               <LayoutGridIcon size={24} className="text-ai-btn" />
             </div>
-            <h3 className="text-ai-btn font-medium mt-3">App builder</h3>
+            <h3 className="text-ai-btn font-medium mt-3">Notebooks</h3>
             <p className="text-ai-btn mt-2">Create Web Applications with the speed of thinking</p>
           </div>
 
